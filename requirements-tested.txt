@@ -1,0 +1,27 @@
+# Linux / Python 3.13.5 本轮实测版本参考；不是跨平台锁文件。
+# 含运行、测试、覆盖率测量和构建依赖；无模型或前端构建工具。
+
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.13.0
+certifi==2026.5.20
+click==8.1.8
+coverage==7.13.3
+fastapi==0.128.2
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.17
+iniconfig==2.3.0
+packaging==25.0
+pluggy==1.6.0
+pydantic==2.13.4
+pydantic-core==2.46.4
+pygments==2.20.0
+pytest==9.0.2
+pytest-cov==7.0.0
+setuptools==82.0.1
+starlette==0.50.0
+typing-extensions==4.16.0
+typing-inspection==0.4.2
+uvicorn==0.48.0

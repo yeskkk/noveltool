@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NovelTool · 项目设置</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div><div class="eyebrow">LOCAL NOVEL WORKSPACE</div><h1>NovelTool <span>v{{VERSION}}</span></h1></div>
+    <div class="milestone">M1 · 项目与存储</div>
+  </header>
+  <main>
+    <section class="intro">
+      <h2>先把创作的底座做好。</h2>
+      <p>本版本负责创建项目、修改配置、批量保存和重新打开。正文编辑与模型调用尚未实现。</p>
+    </section>
+    <section class="status-panel" aria-label="项目保存状态">
+      <div><span class="label">当前项目</span><strong id="project-title">正在加载…</strong><small id="database-path"></small></div>
+      <div><span class="label">保存状态</span><strong id="save-state" role="status">正在连接…</strong><small id="saved-time"></small></div>
+      <div><span class="label">数据版本 / 自动保存</span><strong id="version-state">—</strong><small id="autosave-state"></small></div>
+    </section>
+    <div class="toolbar">
+      <button type="button" id="save-now" class="primary">立即写入磁盘</button>
+      <button type="button" id="reload">从服务器重新载入表单</button>
+      <span id="form-state">表单尚未加载</span>
+    </div>
+    <div id="message" class="message" role="status" aria-live="polite">正在连接本地服务…</div>
+    <div id="stale-warning" class="message warning" hidden>服务器中已有更新，表单没有被自动覆盖。提交前请重新载入。</div>
+    <div class="columns">
+      <div class="forms">
+        <section class="card">
+          <h3>项目名称</h3>
+          <form id="title-form">
+            <label>名称<input name="title" id="title" required maxlength="200" autocomplete="off"></label>
+            <button type="submit">更新名称到内存</button>
+          </form>
+        </section>
+        <form id="config-form" class="card">
+          <h3>模型接口 <span class="tag">仅保存配置</span></h3>
+          <p class="hint">此阶段不会连接模型。密钥只记录环境变量名，不写入 SQLite。</p>
+          <label>兼容接口 Base URL<input name="api_base_url" type="url" required maxlength="2048" spellcheck="false"></label>
+          <div class="grid">
+            <label>写作模型名<input name="writer_model" maxlength="256" placeholder="尚未配置" spellcheck="false"></label>
+            <label>分析模型名<input name="analysis_model" maxlength="256" placeholder="尚未配置" spellcheck="false"></label>
+          </div>
+          <label>密钥环境变量名<input name="api_key_env" required maxlength="128" pattern="[A-Za-z_][A-Za-z0-9_]*" spellcheck="false"></label>
+          <h3 class="section-heading">生成参数 <span class="tag">后续生成时使用</span></h3>
+          <div class="grid three">
+            <label>最少字数 A<input name="min_chars" type="number" min="1" max="1000000" step="1" required></label>
+            <label>最多字数 B<input name="max_chars" type="number" min="1" max="1000000" step="1" required></label>
+            <label>候选数量 n<input name="candidate_count" type="number" min="1" max="32" step="1" required></label>
+          </div>
+          <div class="grid">
+            <label>上下文上限（token）<input name="context_window" type="number" min="2048" max="1000000" step="1" required></label>
+            <label>上下文安全比例<input name="context_safety_ratio" type="number" min="0.01" max="1" step="0.01" required></label>
+            <label>写作温度<input name="writer_temperature" type="number" min="0" max="10" step="0.01" required></label>
+            <label>分析温度<input name="analysis_temperature" type="number" min="0" max="10" step="0.01" required></label>
+          </div>
+          <h3 class="section-heading">保存与运行</h3>
+          <div class="grid">
+            <label>自动保存间隔（秒）<input name="autosave_seconds" type="number" min="10" max="3600" step="1" required></label>
+            <label>模型请求超时（秒）<input name="api_timeout_seconds" type="number" min="1" max="86400" step="1" required></label>
+          </div>
+          <label class="checkbox"><input name="retain_llm_logs" type="checkbox">以后保留模型调用日志（当前还没有模型调用）</label>
+          <div class="form-footer"><button type="submit" class="primary">应用配置到内存</button><small>默认每 60 秒批量写入；也可点击顶部立即保存。</small></div>
+        </form>
+      </div>
+      <aside>
+        <section class="card guide">
+          <div class="eyebrow">本版本的操作顺序</div>
+          <h3>三个状态，不混淆。</h3>
+          <p><b>1 · 修改表单</b><br>内容还只在浏览器里，没有交给程序。</p>
+          <p><b>2 · 应用到内存</b><br>通过校验后更新本地服务，等待批量保存。</p>
+          <p><b>3 · 写入磁盘</b><br>事务提交成功才显示已保存。保存失败时保留内存修改。</p>
+          <hr>
+          <p class="hint">刷新页面不会覆盖服务器内存；但会丢弃尚未点击“应用”的表单修改。</p>
+          <p class="hint">关闭浏览器不会停止服务。要退出程序，请回终端按 Ctrl+C。</p>
+        </section>
+        <section class="card guide">
+          <div class="eyebrow">开发进度</div>
+          <p><b>已完成</b><br>M0 本地服务<br>M1 SQLite 与内存保存</p>
+          <p><b>下一小目标</b><br>M2 正文 Block 与 Revision：导入、选区替换、追加和精确撤销。</p>
+          <p class="hint">本页面不是小说编辑器。暂时没有导入小说或生成正文按钮。</p>
+        </section>
+      </aside>
+    </div>
+  </main>
+  <footer>单进程 · 本机访问 · 无外部前端资源</footer>
+</body>
+</html>
