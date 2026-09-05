@@ -25,7 +25,7 @@ def port_number(value: str) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="NovelTool 本地小说助手（M1：项目存储）")
+    parser = argparse.ArgumentParser(description="NovelTool 本地小说助手（本地项目、正文与版本管理）")
     parser.add_argument("--version", action="version", version=f"NovelTool {__version__}")
     parser.add_argument("--project", type=Path, required=True, help="SQLite 项目文件路径")
     parser.add_argument("--create", action="store_true", help="创建新项目；绝不覆盖现有文件")

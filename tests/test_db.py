@@ -9,7 +9,7 @@ from noveltool.db import (
     InvalidProjectError, ProjectExistsError, ProjectLockedError, ProjectNotFoundError,
     ProjectStore, SaveConflictError, SaveFailedError, UnsupportedSchemaError,
 )
-from noveltool.domain import APPLICATION_ID, ProjectConfig, ProjectData, ProjectMeta
+from noveltool.domain import SCHEMA_VERSION, APPLICATION_ID, ProjectConfig, ProjectData, ProjectMeta
 
 
 def changed_data(data, version=1):
@@ -26,7 +26,7 @@ def test_create_and_round_trip(tmp_path):
         first = store.load()
         assert first.meta.title == "中文标题 😀"
         assert store.connection.execute("PRAGMA application_id").fetchone()[0] == APPLICATION_ID
-        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert store.connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
         assert store.connection.execute("PRAGMA synchronous").fetchone()[0] == 2  # FULL
         assert store.connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         assert store.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
@@ -90,10 +90,10 @@ def test_future_schema_rejected(project_path):
         assert conn.execute("PRAGMA user_version").fetchone()[0] == 999
 
 
-def test_two_tables_only(project_path):
+def test_only_implemented_tables(project_path):
     with ProjectStore.open(project_path) as store:
         names = {row[0] for row in store.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        assert names == {"project_meta", "project_config"}
+        assert names == {"project_meta", "project_config", "revisions", "manuscript_blocks", "llm_runs", "source_imports", "chunk_plans"}
 
 
 def test_flush_and_noop(project_path):
@@ -199,6 +199,6 @@ def test_sql_creation_error_is_actionable_and_releases_lock(tmp_path, monkeypatc
 
 def test_metadata_schema_mismatch_is_rejected(project_path):
     with closing(sqlite3.connect(project_path, isolation_level=None)) as conn:
-        conn.execute("UPDATE project_meta SET schema_version=2")
+        conn.execute("UPDATE project_meta SET schema_version=999")
     with pytest.raises(UnsupportedSchemaError):
         ProjectStore.open(project_path)

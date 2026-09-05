@@ -1,0 +1,21 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NovelTool · TXT 导入与分块</title><link rel="stylesheet" href="/static/app.css"><script src="/static/import.js" defer></script></head><body>
+<header class="topbar"><div><div class="eyebrow">LOCAL NOVEL WORKSPACE</div><h1>NovelTool <span>v{{VERSION}}</span></h1></div><nav><a href="/manuscript">正文</a><a href="/import" aria-current="page">导入与分块</a><a href="/model">模型测试</a><a href="/">项目设置</a></nav></header>
+<main><section class="intro"><h2>把长篇文本准备好</h2><p>先核对编码，再确认导入，最后按上下文预算分块。本页不调用模型，也不会自动分析小说。</p></section>
+<div id="message" class="message" role="status">正在读取项目…</div>
+<section class="card"><h3>1 · 选择文件与编码</h3><p class="hint">自动检测不能判断所有编码；即使解码成功也请核对预览，乱码时手动选 GB18030 等正确编码。只向空正文导入主小说。最多 20 MiB、500 万 Unicode 字符。原始文件另存于项目库中，正文只统一 BOM 与换行。</p>
+<label>TXT 文件<input type="file" id="file" accept=".txt,text/plain"></label>
+<div class="grid"><label>编码<select id="encoding"><option value="auto">自动：BOM 或严格 UTF-8</option><option value="utf-8">UTF-8</option><option value="utf-8-sig">UTF-8（带 BOM）</option><option value="utf-16">UTF-16（带 BOM）</option><option value="utf-16-le">UTF-16 LE</option><option value="utf-16-be">UTF-16 BE</option><option value="gb18030">GB18030</option><option value="gbk">GBK</option></select></label>
+<label>段落边界<select id="mode"><option value="auto">自动：有空行则按空行，否则逐行</option><option value="blankline">空行分段</option><option value="line">逐行分段</option></select></label></div>
+<button id="preview" class="primary">预览文件，不改正文</button></section>
+<section class="card"><h3>2 · 核对预览并确认</h3><p id="preview-info" class="hint">尚未预览。最多保留两份内存预览，15 分钟过期；重启后需要重新上传。</p>
+<label>规范化文本预览（最多 6000 字符）<textarea id="preview-text" class="prose" readonly></textarea></label>
+<details><summary>识别出的章节标题候选</summary><div id="headings" class="hint"></div></details>
+<button id="commit" class="primary space-top" disabled>确认导入并保存原文件</button></section>
+<section class="card"><h3>3 · 创建分块计划</h3><p id="document-info" class="hint">—</p>
+<p class="hint">token 使用 UTF-8 字节数和片段开销作保守估计，不是模型 tokenizer 的精确计数。超长段落会切成带字符偏移的片段，不改动正文。</p>
+<div class="grid"><label>目标块预算<input id="target" type="number" value="6000" min="256" max="32000"></label><label>重叠预算（0 表示无重叠）<input id="overlap" type="number" value="400" min="0" max="4096"></label><label>提示词预留<input id="prompt-reserve" type="number" value="4096" min="256" max="16000"></label><label>模型输出预留<input id="output-reserve" type="number" value="1536" min="128" max="8192"></label></div>
+<button id="plan" class="primary">创建并保存计划（不调用模型）</button><button id="reload">重新读取当前正文与计划</button>
+<p id="plan-info" class="hint space-top">尚无分块计划。</p><div id="chunks"></div></section>
+<section class="card"><h3>保留的原始文件</h3><p class="hint">这里下载原始字节；正文页导出的是已确认、统一换行后的正文。撤销导入不删除原始文件。</p><div id="sources" class="hint"></div></section>
+</main><footer>原始文本可追溯 · 核心片段无损覆盖 · 未确认预览不写盘</footer></body></html>

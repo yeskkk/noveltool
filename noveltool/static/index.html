@@ -10,12 +10,12 @@
 <body>
   <header class="topbar">
     <div><div class="eyebrow">LOCAL NOVEL WORKSPACE</div><h1>NovelTool <span>v{{VERSION}}</span></h1></div>
-    <div class="milestone">M1 · 项目与存储</div>
+    <nav><a href="/manuscript">正文</a><a href="/import">导入与分块</a><a href="/model">模型测试</a><a href="/" aria-current="page">项目设置</a></nav>
   </header>
   <main>
     <section class="intro">
-      <h2>先把创作的底座做好。</h2>
-      <p>本版本负责创建项目、修改配置、批量保存和重新打开。正文编辑与模型调用尚未实现。</p>
+      <h2>项目设置与保存状态。</h2>
+      <p>设置写作参数和本地接口。正文编辑和模型测试已接通，自动小说分析与续写尚未实现。</p>
     </section>
     <section class="status-panel" aria-label="项目保存状态">
       <div><span class="label">当前项目</span><strong id="project-title">正在加载…</strong><small id="database-path"></small></div>
@@ -39,8 +39,8 @@
           </form>
         </section>
         <form id="config-form" class="card">
-          <h3>模型接口 <span class="tag">仅保存配置</span></h3>
-          <p class="hint">此阶段不会连接模型。密钥只记录环境变量名，不写入 SQLite。</p>
+          <h3>模型接口 <span class="tag">显式测试后才调用</span></h3>
+          <p class="hint">应用配置后，到“模型测试”显式发送请求。密钥只记录环境变量名，不写入 SQLite。</p>
           <label>兼容接口 Base URL<input name="api_base_url" type="url" required maxlength="2048" spellcheck="false"></label>
           <div class="grid">
             <label>写作模型名<input name="writer_model" maxlength="256" placeholder="尚未配置" spellcheck="false"></label>
@@ -64,7 +64,7 @@
             <label>自动保存间隔（秒）<input name="autosave_seconds" type="number" min="10" max="3600" step="1" required></label>
             <label>模型请求超时（秒）<input name="api_timeout_seconds" type="number" min="1" max="86400" step="1" required></label>
           </div>
-          <label class="checkbox"><input name="retain_llm_logs" type="checkbox">以后保留模型调用日志（当前还没有模型调用）</label>
+          <label class="checkbox"><input name="retain_llm_logs" type="checkbox">保留后续模型请求/响应日志（关闭不清除历史日志）</label>
           <div class="form-footer"><button type="submit" class="primary">应用配置到内存</button><small>默认每 60 秒批量写入；也可点击顶部立即保存。</small></div>
         </form>
       </div>
@@ -81,9 +81,9 @@
         </section>
         <section class="card guide">
           <div class="eyebrow">开发进度</div>
-          <p><b>已完成</b><br>M0 本地服务<br>M1 SQLite 与内存保存</p>
-          <p><b>下一小目标</b><br>M2 正文 Block 与 Revision：导入、选区替换、追加和精确撤销。</p>
-          <p class="hint">本页面不是小说编辑器。暂时没有导入小说或生成正文按钮。</p>
+          <p><b>已完成</b><br>M0–M1 项目存储<br>M2 正文版本引擎<br>M3 正文编辑网页<br>M4 模型测试<br>M5 结构化校验<br>M6 原始 TXT 与分块计划</p>
+          <p><b>下一小目标</b><br>M7 单块信息抽取；之后再做全书归并。</p>
+          <p class="hint">点击顶部“正文”进入导入、选区修改和撤销页面。</p>
         </section>
       </aside>
     </div>

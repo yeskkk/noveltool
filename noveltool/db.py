@@ -7,7 +7,8 @@ there is deliberately no check_same_thread=False or uncoordinated worker pool.
 
 from __future__ import annotations
 
-from importlib.resources import files
+from collections.abc import Callable
+from .migrations import scripts_after, migrate
 import os
 from pathlib import Path
 import sqlite3
@@ -104,6 +105,7 @@ class ProjectStore:
         self._lock = lock
         self._closed = False
         self._project_id: str | None = None
+        self.migration_backup: Path | None = None
 
     @staticmethod
     def _connect(path: Path) -> sqlite3.Connection:
@@ -146,7 +148,7 @@ class ProjectStore:
             created = True
             conn = cls._connect(path)
             cls._configure_owned_database(conn)
-            schema = files("noveltool").joinpath("sql/001_initial.sql").read_text(encoding="utf-8")
+            schema = "\n".join(scripts_after(0))
             # executescript is only used for this static, bundled schema. The
             # explicit BEGIN remains active for the parameterized inserts below.
             conn.executescript("BEGIN IMMEDIATE;\n" + schema)
@@ -198,14 +200,17 @@ class ProjectStore:
             if conn.execute("PRAGMA application_id").fetchone()[0] != APPLICATION_ID:
                 raise InvalidProjectError("这不是 NovelTool 项目数据库；原文件不会被初始化或覆盖")
             version = conn.execute("PRAGMA user_version").fetchone()[0]
-            if version != SCHEMA_VERSION:
+            if not 1 <= version <= SCHEMA_VERSION:
                 raise UnsupportedSchemaError(
                     f"数据库 schema={version}，本程序只支持 schema={SCHEMA_VERSION}；拒绝自动改写"
                 )
             if conn.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise InvalidProjectError("SQLite 快速完整性检查失败，请保留原文件并从备份恢复")
             store = cls(path, conn, lock)
-            store.load()  # Validate before modifying WAL settings of an existing file.
+            store.load(expected_schema=version)  # Validate old data before any migration.
+            if version < SCHEMA_VERSION:
+                store.migration_backup = migrate(conn, path, version)
+                store.load()
             cls._configure_owned_database(conn)
             return store
         except BaseException as exc:
@@ -218,7 +223,7 @@ class ProjectStore:
                 raise InvalidProjectError(f"数据库无法读取：{exc}") from exc
             raise
 
-    def load(self) -> ProjectData:
+    def load(self, *, expected_schema: int = SCHEMA_VERSION) -> ProjectData:
         try:
             rows = self.connection.execute("SELECT * FROM project_meta").fetchall()
             if len(rows) != 1:
@@ -227,7 +232,7 @@ class ProjectStore:
             if meta_values.pop("singleton") != 1:
                 raise InvalidProjectError("无效的项目单例标识")
             meta = ProjectMeta.model_validate(meta_values)
-            if meta.schema_version != SCHEMA_VERSION:
+            if meta.schema_version != expected_schema:
                 raise UnsupportedSchemaError("项目记录与受支持的 schema 版本不匹配")
             config_rows = self.connection.execute("SELECT * FROM project_config").fetchall()
             if len(config_rows) != 1:
@@ -246,7 +251,8 @@ class ProjectStore:
         except (ValidationError, KeyError, sqlite3.Error) as exc:
             raise InvalidProjectError(f"项目数据校验失败：{exc}") from exc
 
-    def flush(self, data: ProjectData, *, expected_version: int, dirty: set[str]) -> ProjectData:
+    def flush(self, data: ProjectData, *, expected_version: int, dirty: set[str],
+              apply: Callable[[sqlite3.Connection], None] | None = None) -> ProjectData:
         """Commit a complete dirty batch, or leave disk unchanged on failure.
 
         The caller holds its in-memory project lock. Runtime dirty flags are
@@ -254,7 +260,7 @@ class ProjectStore:
         """
         if not dirty:
             return data
-        if not dirty <= {"meta", "config"}:
+        if not dirty <= {"meta", "config", "llm_runs"}:
             raise SaveFailedError("发现未知的 dirty 分类")
         if data.meta.id != self._project_id or data.meta.data_version <= expected_version:
             raise SaveFailedError("项目 ID 或数据版本不合法")
@@ -277,6 +283,8 @@ class ProjectStore:
                 )
                 if cursor.rowcount != 1:
                     raise SaveFailedError("项目配置行丢失，保存已回滚")
+            if apply is not None:
+                apply(self.connection)
             self.connection.execute("COMMIT")
         except BaseException as exc:
             if self.connection.in_transaction:

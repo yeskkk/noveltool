@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 5
 APPLICATION_ID = 0x4E56544C  # "NVTL"; reject databases belonging to another program.
 
 

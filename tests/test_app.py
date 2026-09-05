@@ -1,7 +1,7 @@
 from contextlib import closing
 import sqlite3
 
-from noveltool import __version__
+from noveltool import __version__, MILESTONE
 from noveltool.db import ProjectStore
 
 
@@ -9,7 +9,7 @@ def test_home_and_static_assets_are_local(client):
     response = client.get("/")
     assert response.status_code == 200
     assert __version__ in response.text
-    assert "模型调用尚未实现" in response.text
+    assert "自动小说分析与续写尚未实现" in response.text
     assert "https://" not in response.text
     for path in ["/static/app.js", "/static/app.css"]:
         assert client.get(path).status_code == 200
@@ -17,7 +17,7 @@ def test_home_and_static_assets_are_local(client):
 
 
 def test_health(client):
-    assert client.get("/health").json() == {"status": "ok", "version": "0.1.0", "milestone": "M1"}
+    assert client.get("/health").json() == {"status": "ok", "version": __version__, "milestone": MILESTONE}
 
 
 def test_status(client):

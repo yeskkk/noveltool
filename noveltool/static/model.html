@@ -1,0 +1,21 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NovelTool · 模型测试</title><link rel="stylesheet" href="/static/app.css"><script src="/static/model.js" defer></script></head><body>
+<header class="topbar"><div><div class="eyebrow">LOCAL NOVEL WORKSPACE</div><h1>NovelTool <span>v{{VERSION}}</span></h1></div><nav><a href="/manuscript">正文</a><a href="/import">导入与分块</a><a href="/model" aria-current="page">模型测试</a><a href="/">项目设置</a></nav></header>
+<main><section class="intro"><h2>模型接口诊断</h2><p>只发送本页输入的短文本，不自动读取小说。先在项目设置应用模型地址与名称。</p></section>
+<div id="message" class="message" role="status">加载中…</div>
+<section class="card"><h3>普通文本调用</h3><div id="model-config" class="hint">—</div>
+<label>使用模型<select id="slot"><option value="writer">写作模型</option><option value="analysis">分析模型</option></select></label>
+<label>测试提示词<textarea id="prompt" class="prose" maxlength="2000">请只回复：连接正常。</textarea></label>
+<label>最多输出 token<input id="max-tokens" type="number" min="16" max="2048" value="256"></label>
+<button id="send" class="primary">发送测试请求</button><p class="hint">等待模型时仍可在其他页面阅读/编辑正文。请求默认不自动重试，关闭网页也不保证终止服务端计算。</p></section>
+<section class="card"><h3>返回内容</h3><label>诊断结果（不会提交正文）<textarea id="result" class="prose" readonly></textarea></label><p id="result-meta" class="hint"></p></section>
+<section class="card"><h3>小段结构化抽取诊断</h3>
+<p class="hint">此段固定引用为 B001。每条事实必须带原文摘录。只测试格式与引用，不建立人物设定。</p>
+<label>B001 · 输入片段<textarea id="source" class="prose" maxlength="4000">K把钥匙交给B。B把钥匙放进外套口袋。</textarea></label>
+<button id="structured-send" class="primary">用分析模型抽取并校验</button>
+<label class="space-top">原始模型输出（也可手动粘贴，测试格式）<textarea id="raw-output" class="prose" maxlength="100000" spellcheck="false"></textarea></label>
+<button id="validate-local">仅本地校验 / 受限修复</button>
+<label class="space-top">校验后的对象<textarea id="parsed-output" class="prose" readonly spellcheck="false"></textarea></label>
+<p id="validation-meta" class="hint">本地修复只处理单引号和尾逗号；不会补造缺失事实。</p></section>
+<section class="card"><h3>最近模型调用</h3><button id="refresh-runs">刷新调用记录</button><div id="runs" class="space-top hint"></div></section>
+</main><footer>本地请求控制 · 有界响应/超时 · 不自动提交正文</footer></body></html>

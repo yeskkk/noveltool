@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NovelTool · 正文</title><link rel="stylesheet" href="/static/app.css">
+<script src="/static/manuscript.js" defer></script></head><body>
+<header class="topbar"><div><div class="eyebrow">LOCAL NOVEL WORKSPACE</div><h1>NovelTool <span>v{{VERSION}}</span></h1></div>
+<nav><a href="/manuscript" aria-current="page">正文</a><a href="/import">导入与分块</a><a href="/model">模型测试</a><a href="/">项目设置</a></nav></header>
+<main><section class="intro"><h2>正文与修改历史</h2><p>阅读、选区替换、手工追加。确认以后才保存，所有修改可撤销。</p></section>
+<section class="status-panel"><div><span class="label">当前项目</span><strong id="title">加载中…</strong><small id="save-status">确认正文立即写盘</small></div>
+<div><span class="label">正文版本</span><strong id="revision">—</strong><small id="counts">—</small></div>
+<div><span class="label">编辑状态</span><strong id="draft-state">尚未加载</strong><small>未提交草稿仅在当前浏览器</small></div></section>
+<div id="message" class="message space-top" role="status" aria-live="polite">正在连接…</div>
+<div id="stale" class="message warning" hidden>服务器正文已变化。草稿保留，但提交会被拒绝，请先复制草稿再重新载入。</div>
+<section class="card"><div class="toolbar"><button id="reload">重新载入正文</button><button id="undo">撤销上一次修改</button><a class="button-link" href="/api/manuscript/export">导出已确认 TXT</a></div>
+<label>已确认正文（只读；可选择文字）<textarea id="manuscript" class="prose reader" readonly spellcheck="false" aria-label="已确认正文"></textarea></label>
+<div class="toolbar"><button id="select">用选区建立替换草稿</button><button id="edit-all">整篇手工编辑</button><span id="selection-info">位置按 Unicode 字符计算</span></div>
+<div class="line-controls"><label>起始逻辑行<input id="first-line" type="number" min="1" value="1"></label><label>结束逻辑行<input id="last-line" type="number" min="1" value="1"></label><button id="select-lines">按行建立替换草稿</button></div>
+<p class="hint">逻辑行由原文换行决定，不是窗口自动折行。末尾换行也算一个空逻辑行。</p></section>
+<section class="card"><h3 id="draft-title">编辑草稿</h3>
+<label>草稿正文<textarea id="draft" class="prose" spellcheck="false" placeholder="先选区、整篇编辑、导入文件，或在这里输入要追加的新段落。"></textarea></label>
+<p id="target" class="hint">尚未指定替换范围；可以直接手工追加。</p>
+<div class="toolbar"><button class="primary" id="commit">确认替换</button><button id="append">追加为新段落</button><button id="discard">清空草稿</button><span id="draft-count">0 字</span></div>
+<p class="hint">替换时空草稿表示删除选区；点击确认后立即生成 revision 并写入 SQLite。AI 续写尚未接入。</p></section>
+<section class="card"><h3>导入 TXT 到空正文</h3><p class="hint">此处只保存规范化正文，不保留原始上传字节。需要选择编码、保留原文件和分块，请使用上方“导入与分块”。已有正文不会被导入覆盖。</p>
+<label>TXT 文件<input id="file" type="file" accept=".txt,text/plain"></label>
+<label>分段方式<select id="paragraph-mode"><option value="auto">自动</option><option value="blankline">按空行</option><option value="line">逐行</option></select></label>
+<button id="import" class="primary">确认把草稿导入为空项目正文</button></section>
+<section class="card"><h3>最近修改</h3><div id="history">尚无修改</div></section>
+</main><footer>只读正文 / 自由草稿 / 显式确认 · 不会静默覆盖旧版本</footer></body></html>

@@ -6,9 +6,16 @@ import asyncio
 from dataclasses import dataclass, field
 import logging
 import time
+import sqlite3
+from collections.abc import Callable
 
 from .db import ProjectStore
 from .domain import ProjectConfig, ProjectData, ProjectMeta, utc_now
+from .revision import RevisionEngine, RevisionPlan, load_manuscript, next_undo, persist_plan, revision_history
+from .manuscript import count_chars, text_hash, ManuscriptError, validate_range
+from .llm import LLMRun, persist_runs
+from .structured_llm import ValidationRecord
+from .import_service import ImportService
 
 logger = logging.getLogger(__name__)
 
@@ -60,18 +67,23 @@ class RuntimeProject:
 class ProjectSession:
     """All access occurs on one event loop; no lock is held during model calls.
 
-    There are no model calls yet. Store writes are currently tiny and synchronous.
+    Network waits never hold this lock. SQLite writes are synchronous and bounded.
     If larger writes later move to a worker, that worker must OWN its connection.
     """
 
     def __init__(self, store: ProjectStore):
         self.store = store
         self.project = RuntimeProject.from_data(store.load())
+        self.manuscript = load_manuscript(store.connection)
         self.lock = asyncio.Lock()
+        self.model_gate = asyncio.Lock()
+        self._pending_llm_runs: list[LLMRun] = []
+        self._pending_validations: dict[str, ValidationRecord] = {}
         self._stop = asyncio.Event()
         self._autosave_task: asyncio.Task[None] | None = None
         self._last_attempt = time.monotonic()
         self._closed = False
+        self.imports = ImportService(self)
 
     async def update_config(self, config: ProjectConfig, expected: int) -> bool:
         async with self.lock:
@@ -80,6 +92,121 @@ class ProjectSession:
     async def update_title(self, title: str, expected: int) -> bool:
         async with self.lock:
             return self.project.update_title(title, expected)
+
+    async def record_llm_run(self, run: LLMRun) -> None:
+        from dataclasses import replace
+        async with self.lock:
+            # Turning logging off also applies to an already-running request.
+            if not self.project.data.config.retain_llm_logs:
+                run = replace(run, request_json="", raw_response="", retained=0)
+            self._pending_llm_runs.append(run)
+            self.project.data = ProjectData(self.project._changed_meta(), self.project.data.config)
+            self.project.dirty.update({"meta", "llm_runs"})
+
+    async def record_validation(self, record: ValidationRecord) -> None:
+        from dataclasses import replace
+        async with self.lock:
+            pending = next((r for r in self._pending_llm_runs if r.id == record.run_id), None)
+            row = None if pending else self.store.connection.execute(
+                "SELECT retained FROM llm_runs WHERE id=?", (record.run_id,)).fetchone()
+            retained = pending.retained if pending else bool(row and row["retained"])
+            if not retained or not self.project.data.config.retain_llm_logs:
+                record = replace(record, parsed_json=None)
+            self._pending_validations[record.run_id] = record
+            self.project.data = ProjectData(self.project._changed_meta(), self.project.data.config)
+            self.project.dirty.update({"meta", "llm_runs"})
+
+    async def llm_run_views(self) -> list[dict]:
+        from dataclasses import asdict
+        async with self.lock:
+            rows = [dict(row) for row in self.store.connection.execute(
+                "SELECT * FROM llm_runs ORDER BY finished_at DESC LIMIT 20")]
+            rows = [asdict(run) for run in reversed(self._pending_llm_runs)] + rows
+            for row in rows:
+                record = self._pending_validations.get(row["id"])
+                if record:
+                    row.update(validation_status=record.status, validation_error=record.error)
+            return [{k: row.get(k) for k in ("id","purpose","model","status","error_code",
+                     "error_message","finish_reason","retained","elapsed_ms","finished_at",
+                     "validation_status","validation_error")}
+                    for row in rows[:20]]
+
+    def _persist_extras(self, conn, plan: RevisionPlan | None = None) -> None:
+        persist_runs(conn, self._pending_llm_runs)
+        for record in self._pending_validations.values():
+            cur = conn.execute("UPDATE llm_runs SET validation_status=?,parsed_json=?,validation_error=? WHERE id=?",
+                (record.status, record.parsed_json, record.error, record.run_id))
+            if cur.rowcount != 1:
+                from .db import SaveFailedError
+                raise SaveFailedError("结构化校验记录没有对应的模型调用")
+        if plan is not None:
+            persist_plan(conn, plan)
+
+    async def manuscript_view(self) -> dict[str, object]:
+        async with self.lock:
+            rendered = self.manuscript.render()
+            return {"revision_no": self.manuscript.revision_no, "text": rendered.text,
+                    "text_hash": text_hash(rendered.text), "char_count": count_chars(rendered.text),
+                    "block_count": len(self.manuscript.blocks),
+                    "line_count": rendered.text.count("\n") + 1}
+
+    def _commit_plan_locked(self, plan: RevisionPlan | None) -> bool:
+        if plan is None:
+            return False
+        return self._commit_snapshot_locked(plan=plan)
+
+    def _commit_snapshot_locked(self, *, plan: RevisionPlan | None = None,
+                                extra: Callable[[sqlite3.Connection], None] | None = None) -> bool:
+        """Caller owns lock. Persist pending edits/logs + optional text + auxiliary rows atomically."""
+        changed = ProjectData(self.project._changed_meta(), self.project.data.config)
+        def apply(conn):
+            self._persist_extras(conn, plan)
+            if extra is not None:
+                extra(conn)
+        try:
+            saved = self.store.flush(changed, expected_version=self.project.saved_version,
+                                     dirty=set(self.project.dirty) | {"meta"}, apply=apply)
+        except Exception as exc:
+            self.project.last_save_error = str(exc)
+            raise
+        # Never publish a changed manuscript before COMMIT succeeds.
+        if plan is not None:
+            self.manuscript = plan.manuscript
+        self.project.data = saved
+        self.project.saved_version = saved.meta.data_version
+        self.project.dirty.clear()
+        self._pending_llm_runs.clear()
+        self._pending_validations.clear()
+        self.project.last_save_error = None
+        self._last_attempt = time.monotonic()
+        return True
+
+    async def import_manuscript(self, text: str, expected: int, mode: str = "auto") -> bool:
+        async with self.lock:
+            return self._commit_plan_locked(RevisionEngine.import_text(self.manuscript, text, expected, mode))
+
+    async def append_manuscript(self, text: str, expected: int) -> bool:
+        async with self.lock:
+            return self._commit_plan_locked(RevisionEngine.append(self.manuscript, text, expected))
+
+    async def replace_manuscript(self, start: int, end: int, text: str, expected: int,
+                                 instruction: str = "", selected_text: str | None = None) -> bool:
+        async with self.lock:
+            self.manuscript.check_revision(expected)
+            validate_range(self.manuscript.text, start, end)
+            if selected_text is not None and self.manuscript.text[start:end] != selected_text:
+                raise ManuscriptError("选区原文与当前正文不匹配；请重新选择，修改未提交")
+            return self._commit_plan_locked(RevisionEngine.replace(self.manuscript, start, end, text, expected, instruction))
+
+    async def undo_manuscript(self, expected: int) -> bool:
+        async with self.lock:
+            self.manuscript.check_revision(expected)
+            target, blocks = next_undo(self.store.connection)
+            return self._commit_plan_locked(RevisionEngine.undo(self.manuscript, target, blocks, expected))
+
+    async def history(self) -> list[dict]:
+        async with self.lock:
+            return revision_history(self.store.connection)
 
     async def config_view(self) -> dict[str, object]:
         async with self.lock:
@@ -99,6 +226,8 @@ class ProjectSession:
                 "dirty": bool(self.project.dirty), "dirty_sections": sorted(self.project.dirty),
                 "last_saved_at": meta.saved_at, "last_save_error": self.project.last_save_error,
                 "autosave_seconds": self.project.data.config.autosave_seconds,
+                "manuscript_revision_no": self.manuscript.revision_no,
+                "migration_backup": str(self.store.migration_backup) if self.store.migration_backup else None,
             }
 
     def _flush_locked(self) -> bool:
@@ -109,6 +238,7 @@ class ProjectSession:
                 self.project.data,
                 expected_version=self.project.saved_version,
                 dirty=set(self.project.dirty),
+                apply=self._persist_extras,
             )
         except Exception as exc:
             self.project.last_save_error = str(exc)
@@ -116,6 +246,8 @@ class ProjectSession:
         self.project.data = data
         self.project.saved_version = data.meta.data_version
         self.project.dirty.clear()
+        self._pending_llm_runs.clear()
+        self._pending_validations.clear()
         self.project.last_save_error = None
         return True
 
@@ -130,7 +262,7 @@ class ProjectSession:
         """One timer check. Tests inject a monotonic time, not a 60-second sleep."""
         async with self.lock:
             current = time.monotonic() if now is None else now
-            if current - self._last_attempt < self.project.data.config.autosave_seconds:
+            if current < self._last_attempt + self.project.data.config.autosave_seconds:
                 return False
             self._last_attempt = current
             try:
