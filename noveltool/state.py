@@ -112,8 +112,8 @@ class StateReducer:
         return {**graph,"at_cp":at_cp,"revision_no":s.manuscript.revision_no,"version":s.knowledge.version,
             "notice":"这是叙述截至此处可知的状态，不是自动还原的故事实际时间。自动证据以来源切片末尾为可知位置，倒叙和推测需人工核对。",
             "warnings":[*s.knowledge.errors,*s.settings.load_errors,
-                *(["正文已变化，旧自动分析尚未同步，未带入当前状态；请重新分块分析或人工补齐设定"]
-                  if s.imports.last_plan is not None and s.imports.last_plan.base_revision_no!=s.manuscript.revision_no else []),
+                *(["语义覆盖尚未完成：当前只使用原输入仍有效的旧分析，请同步缺失范围并核对设定"]
+                  if not s.semantic.status_locked()['covered'] else []),
                 *["有人工记录的位置已失效，未参与状态计算" for e in s.settings.entry_views_locked() if e["active"] and e["anchor_stale"]]][:50]}
 
     async def view(self,at_cp:int|None=None):

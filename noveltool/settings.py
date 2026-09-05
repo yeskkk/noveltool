@@ -298,18 +298,15 @@ class SettingsService:
         s = self.session
         async with s.lock:
             self._check_locked(body.expected_version)
-            # Include previously rejected observations from selected runs, so they
-            # can be reopened. Old-plan data cannot be silently adopted.
-            plan = s.imports.last_plan
-            if plan is None or plan.base_revision_no != s.manuscript.revision_no:
-                raise ManuscriptError("请先建立并分析当前正文计划")
+            # Only currently source-validated observations may be reviewed.
+            # Reused originals retain their ids even when the plan/revision changes.
             placeholders = ",".join("?" for _ in body.observation_ids)
             rows = s.store.connection.execute(f"""SELECT o.id,o.status,r.plan_id,r.base_revision_no,r.status AS run_status
                 FROM observations o JOIN analysis_runs r ON r.id=o.run_id WHERE o.id IN ({placeholders})""",
                 body.observation_ids).fetchall()
             current_ids = {r["id"] for r in s.knowledge.records}
-            if any(r["id"] not in current_ids for r in rows) or len(rows) != len(set(body.observation_ids)) or any(r["plan_id"] != plan.id or r["base_revision_no"] != s.manuscript.revision_no or r["run_status"] != "done" for r in rows):
-                raise ManuscriptError("只能审核当前正文计划的成功观察")
+            if any(r["id"] not in current_ids for r in rows) or len(rows) != len(set(body.observation_ids)) or any(r["run_status"] != "done" for r in rows):
+                raise ManuscriptError("只能审核当前原文仍有效的成功观察")
             def apply(conn):
                 conn.executemany("UPDATE observations SET status=? WHERE id=?", [(body.decision, r["id"]) for r in rows])
             self._persist_locked("review", uuid4().hex, {r["id"]: r["status"] for r in rows},

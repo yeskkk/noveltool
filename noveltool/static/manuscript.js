@@ -102,3 +102,10 @@ window.addEventListener("beforeunload",event=>{if(draftDirty){event.preventDefau
     setInterval(async()=>{if(busy)return;try{const s=await api("/api/status");$("stale").hidden=s.manuscript_revision_no===loaded.revision_no;}catch{tell("无法联系本地服务；请保留草稿，确认服务状态。",true);}},3000);
   }catch(e){tell(e.message,true);}
 })();
+
+$("ai-rewrite").addEventListener('click',()=>action(async()=>{
+ if(!confirmDiscard())return;
+ const el=$("manuscript"),a=cp(el.value,el.selectionStart),b=cp(el.value,el.selectionEnd);
+ if(a===b)throw new Error('先选中非空原文；也可先按行定位，再使用这个按钮。');
+ draftDirty=false;location.href=`/generation?mode=rewrite&revision=${loaded.revision_no}&start=${a}&end=${b}`;
+}));

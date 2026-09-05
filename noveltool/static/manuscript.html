@@ -3,7 +3,7 @@
 <title>NovelTool · 正文</title><link rel="stylesheet" href="/static/app.css">
 <script src="/static/manuscript.js" defer></script></head><body>
 <header class="topbar"><div><div class="eyebrow">LOCAL NOVEL WORKSPACE</div><h1>NovelTool <span>v{{VERSION}}</span></h1></div>
-<nav><a href="/manuscript" aria-current="page">正文</a><a href="/import">导入与分块</a><a href="/analysis">分析</a><a href="/settings">设定</a><a href="/timeline">时间线</a><a href="/ideas">构思</a><a href="/context">状态/上下文</a><a href="/generation">续写</a><a href="/model">模型测试</a><a href="/">项目设置</a></nav></header>
+<nav><a href="/manuscript" aria-current="page">正文</a><a href="/import">导入与分块</a><a href="/analysis">分析</a><a href="/sync">设定同步</a><a href="/consistency">一致性检查</a><a href="/maintenance">项目维护</a><a href="/settings">设定</a><a href="/timeline">时间线</a><a href="/ideas">构思</a><a href="/context">状态/上下文</a><a href="/generation">续写/返修</a><a href="/model">模型测试</a><a href="/">项目设置</a></nav></header>
 <main><section class="intro"><h2>正文与修改历史</h2><p>阅读、选区替换、手工追加。确认以后才保存，所有修改可撤销。</p></section>
 <section class="status-panel"><div><span class="label">当前项目</span><strong id="title">加载中…</strong><small id="save-status">确认正文立即写盘</small></div>
 <div><span class="label">正文版本</span><strong id="revision">—</strong><small id="counts">—</small></div>
@@ -12,7 +12,7 @@
 <div id="stale" class="message warning" hidden>服务器正文已变化。草稿保留，但提交会被拒绝，请先复制草稿再重新载入。</div>
 <section class="card"><div class="toolbar"><button id="reload">重新载入正文</button><button id="undo">撤销上一次修改</button><a class="button-link" href="/api/manuscript/export">导出已确认 TXT</a></div>
 <label>已确认正文（只读；可选择文字）<textarea id="manuscript" class="prose reader" readonly spellcheck="false" aria-label="已确认正文"></textarea></label>
-<div class="toolbar"><button id="select">用选区建立替换草稿</button><button id="edit-all">整篇手工编辑</button><span id="selection-info">位置按 Unicode 字符计算</span></div>
+<div class="toolbar"><button id="select">用选区建立替换草稿</button><button id="ai-rewrite">AI 返修当前选区</button><button id="edit-all">整篇手工编辑</button><span id="selection-info">位置按 Unicode 字符计算</span></div>
 <div class="line-controls"><label>起始逻辑行<input id="first-line" type="number" min="1" value="1"></label><label>结束逻辑行<input id="last-line" type="number" min="1" value="1"></label><button id="select-lines">按行建立替换草稿</button></div>
 <p class="hint">逻辑行由原文换行决定，不是窗口自动折行。末尾换行也算一个空逻辑行。</p></section>
 <section class="card"><h3 id="draft-title">编辑草稿</h3>

@@ -27,6 +27,9 @@ from .settings_routes import router as settings_router
 from .idea_routes import router as idea_router
 from .context_routes import router as context_router
 from .generation_routes import router as generation_router
+from .semantic_routes import router as semantic_router
+from .consistency_routes import router as consistency_router
+from .maintenance_routes import router as maintenance_router
 from .llm import LLMError
 from .structured_llm import StructuredError
 
@@ -115,6 +118,9 @@ def create_app(project_path: Path, *, llm_transport=None) -> FastAPI:
     app.include_router(idea_router)
     app.include_router(context_router)
     app.include_router(generation_router)
+    app.include_router(semantic_router)
+    app.include_router(consistency_router)
+    app.include_router(maintenance_router)
     app.state.llm_transport = llm_transport
 
     @app.exception_handler(RequestValidationError)

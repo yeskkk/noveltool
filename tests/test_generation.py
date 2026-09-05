@@ -145,7 +145,7 @@ def test_generation_disk_failure_does_not_destroy_existing_success(project_path)
     asyncio.run(scenario())
 
 
-def test_generation_http_and_rewrite_not_enabled_yet(project_path):
+def test_generation_http_and_rewrite_requires_existing_text(project_path):
     with TestClient(create_app(project_path,llm_transport=httpx.MockTransport(lambda r:httpx.Response(200,json=envelope('候选文本。')))),base_url='http://127.0.0.1') as c:
         h={'X-Noveltool-Token':c.get('/api/session').json()['csrf_token']};configure(c,h)
         assert c.get('/generation').status_code==200 and c.get('/static/generation.js').status_code==200

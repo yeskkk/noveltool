@@ -30,7 +30,7 @@ async def page():
 @router.post("/api/llm/test")
 async def test_model(body: ModelTest,request: Request):
     session=request.app.state.session
-    if session.model_gate.locked() or session.jobs.busy or session.generation.busy:
+    if session.model_gate.locked() or session.jobs.busy or session.generation.busy or session.consistency.busy:
         raise LLMError("busy","已有模型请求正在运行；本版本默认单请求，请等待")
     async with session.model_gate:
         async with session.lock:
@@ -90,7 +90,7 @@ async def local_validate(body:LocalValidationRequest):
 @router.post("/api/llm/structured-test")
 async def structured_test(body:DiagnosticRequest,request:Request):
     session=request.app.state.session
-    if session.model_gate.locked() or session.jobs.busy or session.generation.busy:
+    if session.model_gate.locked() or session.jobs.busy or session.generation.busy or session.consistency.busy:
         raise LLMError("busy","已有模型请求正在运行，请等待")
     async with session.model_gate:
         async with session.lock:

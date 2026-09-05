@@ -16,6 +16,7 @@ from .analysis import compact
 from .context import ContextRequest
 from .domain import ProjectConfig,utc_now
 from .drafts import GenerationDrafts
+from .rewrite import RewriteTarget, capture_target
 from .llm import LLMClient,LLMError,request_token_estimate
 from .manuscript import ManuscriptError,RevisionConflictError,check_text,count_chars
 from .settings import Strict
@@ -48,7 +49,7 @@ class GenerationService:
     def busy(self):return self.active_id is not None
 
     def _busy_locked(self):
-        if self.busy or self.session.jobs.busy or self.session.model_gate.locked():
+        if self.busy or self.session.jobs.busy or self.session.model_gate.locked() or self.session.consistency.busy:
             raise LLMError('busy','已有模型任务，请先完成或暂停它')
 
     def _invalidate(self,tid):self._cache.pop(tid,None)
@@ -63,6 +64,21 @@ class GenerationService:
                 context=strict_loads(row.pop('context_json'))
                 request=GenerationRequest.model_validate(strict_loads(row.pop('request_json')),strict=True)
                 check_text(row['draft_text'])
+                row['rewrite_target'] = None
+                if row['task_type']=='rewrite':
+                    stored=self.session.store.connection.execute('SELECT target_json FROM generation_rewrite_targets WHERE task_id=?',(tid,)).fetchone()
+                    if stored is None:raise ValueError('返修任务缺少选区快照')
+                    target=RewriteTarget.model_validate_json(stored['target_json'])
+                    if (target.base_revision_no!=row['base_revision_no'] or
+                        (target.start_cp,target.end_cp)!=(request.context.start_cp,request.context.end_cp) or
+                        (target.start_cp,target.end_cp)!=(context['start_cp'],context['end_cp'])):
+                        raise ValueError('返修选区与任务基线不一致')
+                    section=next((sec for sec in context['sections'] if sec['key']=='target'),None)
+                    if section is None or section['text']!=target.selected_text or not section['included']:
+                        raise ValueError('返修目标与上下文快照不一致')
+                    row['rewrite_target']=target.model_dump()
+                if request.context.task_type!=row['task_type'] or context['task_type']!=row['task_type']:
+                    raise ValueError('任务类型不一致')
                 if row['status']=='committed' and (not row['committed_revision_id'] or row['committed_text_hash']!=sha256(row['draft_text'].encode()).hexdigest()):
                     raise ValueError('确认记录不完整')
                 if not isinstance(context,dict) or context['base_revision_no']!=row['base_revision_no'] or context['setting_version']!=row['base_setting_version']:
@@ -133,17 +149,19 @@ class GenerationService:
         s=self.session
         async with s.lock:
             self._busy_locked()
-            if body.context.task_type!='continue':
-                raise ManuscriptError('本版本只执行续写；返修目前可预览上下文，尚未接入生成')
             package=s.context.build_locked(body.context)
             config=s.project.data.config
             if not config.writer_model:raise LLMError('configuration','请先填写并应用写作模型名')
             n=config.candidate_count if body.candidate_count is None else body.candidate_count
             tid,now=uuid4().hex,utc_now()
-            s._commit_snapshot_locked(extra=lambda c:c.execute('''INSERT INTO generation_tasks
-                (id,task_type,base_revision_no,base_setting_version,candidate_count,request_json,config_json,context_json,status,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,'generating',?,?)''',(tid,'continue',package.base_revision_no,package.setting_version,n,
-                body.model_dump_json(),config.model_dump_json(),compact(package.to_dict()),now,now)))
+            target=capture_target(s.manuscript,body.context.start_cp,body.context.end_cp) if body.context.task_type=='rewrite' else None
+            def persist(c):
+                c.execute('''INSERT INTO generation_tasks
+                    (id,task_type,base_revision_no,base_setting_version,candidate_count,request_json,config_json,context_json,status,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,'generating',?,?)''',(tid,body.context.task_type,package.base_revision_no,package.setting_version,n,
+                    body.model_dump_json(),config.model_dump_json(),compact(package.to_dict()),now,now))
+                if target:c.execute('INSERT INTO generation_rewrite_targets VALUES(?,?)',(tid,target.model_dump_json()))
+            s._commit_snapshot_locked(extra=persist)
             self._launch_locked(tid,list(range(n)),transport)
         return await self.view(tid)
 

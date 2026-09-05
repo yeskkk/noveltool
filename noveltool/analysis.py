@@ -170,7 +170,7 @@ class AnalysisService:
         s = self.session
         if getattr(s, "jobs", None) and s.jobs.busy and job_id != s.jobs.active_id:
             raise LLMError("busy", "全书分析任务运行中，请先暂停它")
-        if s.model_gate.locked() or s.generation.busy:
+        if s.model_gate.locked() or s.generation.busy or s.consistency.busy:
             raise LLMError("busy", "已有模型请求正在运行")
         async with s.model_gate:
             async with s.lock:
@@ -231,11 +231,14 @@ class AnalysisService:
             sql += " WHERE plan_id=?"
             args = (plan_id,)
         sql += " ORDER BY rowid DESC LIMIT 5000"
+        s.semantic.refresh_locked()
+        eligible = {r['id'] for r in s.semantic.eligible}
         result = []
         for row in s.store.connection.execute(sql, args):
             view = {k: row[k] for k in ("id", "plan_id", "ordinal", "pass_type", "base_revision_no",
                     "model", "status", "requires_review", "error", "created_at", "finished_at")}
-            view["stale"] = row["base_revision_no"] != s.manuscript.revision_no or row["status"] == "stale"
+            view["stale"] = row["id"] not in eligible if row["status"] == "done" else row["base_revision_no"] != s.manuscript.revision_no or row["status"] == "stale"
+            view["historical_revision"] = row["base_revision_no"] != s.manuscript.revision_no
             view["requires_review"] = bool(view["requires_review"])
             result.append(view)
         return result
@@ -253,7 +256,9 @@ class AnalysisService:
             result = dict(row)
             for key in ("config_json", "refs_json", "llm_run_ids_json", "repairs_json"):
                 result[key.removesuffix("_json")] = json.loads(result.pop(key))
-            result["stale"] = row["base_revision_no"] != s.manuscript.revision_no or row["status"] == "stale"
+            s.semantic.refresh_locked()
+            result["stale"] = row["id"] not in {r['id'] for r in s.semantic.eligible} if row["status"] == "done" else row["base_revision_no"] != s.manuscript.revision_no or row["status"] == "stale"
+            result["historical_revision"] = row["base_revision_no"] != s.manuscript.revision_no
             result["requires_review"] = bool(result["requires_review"])
             result["observations"] = [{"id": o["id"], "kind": o["kind"], "payload": json.loads(o["payload_json"]),
                     "evidence": json.loads(o["evidence_json"]), "status": o["status"]}

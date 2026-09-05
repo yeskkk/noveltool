@@ -9,7 +9,7 @@
  // Match Python str.isspace(), including U+0085 and U+001C..001F, not JS \s.
  const whitespace=/^[\u0009-\u000D\u001C-\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]$/u;
  const count=text=>Array.from(text).filter(c=>!whitespace.test(c)).length;
- function contextBody(){return {task_type:"continue",expected_revision_no:doc.revision_no,expected_version:catalog.version,
+ function contextBody(){const rewrite=$("task-type").value==="rewrite";return {task_type:rewrite?"rewrite":"continue",start_cp:rewrite?Number($("rewrite-start").value):null,end_cp:rewrite?Number($("rewrite-end").value):null,expected_revision_no:doc.revision_no,expected_version:catalog.version,
   instruction:$("instruction").value,min_chars:Number($("min-chars").value),max_chars:Number($("max-chars").value),
   output_reserve:$("reserve").value?Number($("reserve").value):null,pinned_entities:Array.from($("pins").selectedOptions).map(x=>x.value)};}
  async function history(){const data=await U.api('/api/generation');$("history").replaceChildren();
@@ -22,7 +22,9 @@
   $("project-info").textContent=`正文 Revision ${doc.revision_no} · 写作模型 ${cfg.writer_model||'尚未配置'} · ${catalog.entities.length} 个当前实体。`;
   const selected=reset?[]:Array.from($("pins").selectedOptions).map(o=>o.value);
   $("pins").replaceChildren(...catalog.entities.map(e=>{const o=U.node('option',e.name);o.value=e.id;o.selected=selected.includes(e.id);return o;}));
-  if(reset)formDirty=false;await history();if(task)load(await U.api(`/api/generation/${task.id}`));
+  $("rewrite-source").value=doc.text;
+  if(reset){$("rewrite-start").value=0;$("rewrite-end").value=Math.min(100,Array.from(doc.text).length);formDirty=false;}
+  showSelection();await history();if(task)load(await U.api(`/api/generation/${task.id}`));
  }
  function schedule(){if(timer)clearTimeout(timer);if(task?.live||task?.draft_dirty)timer=setTimeout(async()=>{
    try{const id=task.id;const v=await U.api(`/api/generation/${id}`);if(task?.id===id)load(v);}
@@ -33,7 +35,7 @@
   if(draftId!==v.id||replaceDraft){
     if(draftTimer)clearTimeout(draftTimer);
     draftId=v.id;draftVersion=v.draft_version;draftAck=v.draft_text;draftConflict=false;$("draft").value=v.draft_text;
-    $("allow-length").checked=false;$("commit-notice").textContent=v.status==='committed'?'这是已经确认的历史草稿；正文可能后来被撤销或返修，请到正文页查看当前文本。':'确认正文后还需要重新分块分析或人工补齐设定；此版本不自动增量同步。';
+    $("allow-length").checked=false;$("commit-notice").textContent=v.status==='committed'?'这是已经确认的历史草稿；正文可能后来被撤销或返修，请到正文页查看当前文本。':'确认时可启动增量设定同步；同步失败不会回滚正文。';
   }else if(!draftRequest&&v.draft_version>draftVersion){
     if(draftChanged())draftConflict=true;
     else{draftVersion=v.draft_version;draftAck=v.draft_text;$("draft").value=v.draft_text;}
@@ -107,6 +109,10 @@
    const tries=task.attempts.filter(a=>a.candidate_index===slot.index),signature=JSON.stringify(tries.map(a=>[a.id,a.status]));
    if(signature!==c.signature){c.signature=signature;c.log.replaceChildren();for(const a of tries){const d=U.node('details');d.append(U.node('summary',`第 ${a.attempt_no} 次 · ${labels[a.status]||a.status}${a.error?' · '+a.error:''}`));if(a.text)d.append(U.node('pre',a.text,'wrapped'));c.log.append(d);}}
   }
+  const rewrite=task.task_type==='rewrite';
+  $("task-target-panel").hidden=!rewrite;$("check-after-label").hidden=!rewrite;$("task-target").textContent=task.rewrite_target?.selected_text||'';
+  $("preview-rewrite").hidden=!rewrite;$("preview-rewrite").disabled=committing||draftConflict;
+  $("commit-draft").textContent=rewrite?'确认替换原选区':'确认追加到正文';
   drawDraft();
  }
  function guard(fn){return ()=>Promise.resolve().then(fn).catch(e=>U.tell(e.message,true));}
@@ -127,15 +133,38 @@
   load(await U.api(`/api/generation/${task.id}`),true);U.tell('已载入服务端草稿。');}));
  $("commit-draft").addEventListener('click',guard(async()=>{
   if(!task||committing)return;
-  if(!confirm('将最终草稿追加为已确认正文？确认后可在正文页撤销。'))return;
+  if(!confirm(task.task_type==='rewrite'?'用最终草稿替换本任务指定的原文范围？范围外不变，确认后可撤销。':'将最终草稿追加为已确认正文？确认后可在正文页撤销。'))return;
   committing=true;draw();
   try{
     await saveDraft(true);
-    const result=await U.api(`/api/generation/${task.id}/commit`,{method:'POST',body:JSON.stringify({text:$("draft").value,expected_draft_version:draftVersion,allow_out_of_range:$("allow-length").checked})});
+    const result=await U.api(`/api/generation/${task.id}/commit`,{method:'POST',body:JSON.stringify({text:$("draft").value,expected_draft_version:draftVersion,allow_out_of_range:$("allow-length").checked,sync_after_commit:$("sync-after-commit").checked,check_after_commit:$("check-after-commit").checked})});
     load(result.task);await refresh(false);$("commit-notice").textContent=result.notice;
     U.tell(`已确认到 Revision ${result.revision.revision_no}。${result.notice}`);
   }finally{committing=false;draw();}
  }));
+ function showSelection(){
+  const rewrite=$("task-type").value==='rewrite';$("rewrite-controls").hidden=!rewrite;
+  $("start").textContent=rewrite?'生成 n 个返修':'生成 n 个续写';
+  const a=Number($("rewrite-start").value),b=Number($("rewrite-end").value),chars=Array.from(doc?.text||'');
+  $("rewrite-selection").textContent=Number.isInteger(a)&&Number.isInteger(b)&&a>=0&&a<b&&b<=chars.length?`将替换 [${a}, ${b})：\n`+chars.slice(a,b).join(''):'请选择非空且合法的返修范围。';
+ }
+ $("task-type").addEventListener('change',showSelection);
+ for(const id of ['rewrite-start','rewrite-end'])$(id).addEventListener('input',showSelection);
+ $("rewrite-use-selection").addEventListener('click',()=>{const el=$("rewrite-source");$("rewrite-start").value=Array.from(el.value.slice(0,el.selectionStart)).length;$("rewrite-end").value=Array.from(el.value.slice(0,el.selectionEnd)).length;showSelection();});
+ $("rewrite-use-lines").addEventListener('click',guard(async()=>{
+  const r=await U.api('/api/manuscript/line-range',{method:'POST',body:JSON.stringify({expected_revision_no:doc.revision_no,first_line:Number($("rewrite-first-line").value),last_line:Number($("rewrite-last-line").value)})});
+  $("rewrite-start").value=r.start_cp;$("rewrite-end").value=r.end_cp;showSelection();
+ }));
+ $("preview-rewrite").addEventListener('click',guard(async()=>{
+  await saveDraft(true);const r=await U.api(`/api/generation/${task.id}/preview`,{method:'POST',body:JSON.stringify({text:$("draft").value,expected_draft_version:draftVersion})});
+  $("rewrite-diff").textContent=r.diff+(r.diff_truncated?'\n（差异较长，展示前 600 行；完整原文及草稿在上方）':'');
+  U.tell(r.notice+(r.stale?' 任务基线已过期，不能直接确认。':''));
+ }));
+ function applyLink(){const q=new URLSearchParams(location.search);if(q.get('mode')!=='rewrite')return;
+  if(Number(q.get('revision'))!==doc.revision_no)throw new Error('链接基于旧正文版本，未自动套用范围；请从当前正文重新选择。');
+  const a=Number(q.get('start')),b=Number(q.get('end'));if(!q.has('start')||!q.has('end')||!Number.isInteger(a)||!Number.isInteger(b)||a<0||a>=b||b>Array.from(doc.text).length)throw new Error('链接中的返修范围无效。');
+  $("task-type").value='rewrite';$("rewrite-start").value=a;$("rewrite-end").value=b;showSelection();
+ }
  window.addEventListener('beforeunload',e=>{if(draftChanged()||draftRequest){e.preventDefault();e.returnValue='';}});
- U.init().then(refresh).then(()=>U.tell('选择本次要求和 A/B/n，可以先预览上下文。')).catch(e=>U.tell(e.message,true));
+ U.init().then(refresh).then(applyLink).then(()=>U.tell('选择本次要求和 A/B/n，可以先预览上下文。')).catch(e=>U.tell(e.message,true));
 })();

@@ -24,6 +24,9 @@ from .ideas import IdeaService
 from .state import StateReducer
 from .context import ContextBuilder
 from .generation import GenerationService
+from .semantic import SemanticSync
+from .consistency import ConsistencyService
+from .maintenance import MaintenanceService, startup_recovery_counts
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +94,7 @@ class ProjectSession:
         self._autosave_task: asyncio.Task[None] | None = None
         self._last_attempt = time.monotonic()
         self._closed = False
+        self.startup_recovery = startup_recovery_counts(store.connection)
         self.imports = ImportService(self)
         self.analysis = AnalysisService(self)
         self.jobs = AnalysisJobs(self)
@@ -100,6 +104,9 @@ class ProjectSession:
         self.state_reducer = StateReducer(self)
         self.context = ContextBuilder(self)
         self.generation = GenerationService(self)
+        self.semantic = SemanticSync(self)
+        self.consistency = ConsistencyService(self)
+        self.maintenance = MaintenanceService(self)
 
     async def update_config(self, config: ProjectConfig, expected: int) -> bool:
         async with self.lock:
@@ -310,6 +317,7 @@ class ProjectSession:
             return
         self._stop.set()
         try:
+            await self.consistency.close()
             await self.generation.close()
             await self.jobs.close()
             if self._autosave_task is not None:

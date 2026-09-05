@@ -73,7 +73,9 @@ def test_empty_analysis_is_valid_and_repaired_requires_review(project_path):
         assert c.post('/api/analysis/chunks/999/run',headers=h,json=b).status_code==422
         assert c.post('/api/analysis/chunks/0/run',json=b).status_code==403
         c.post('/api/manuscript/append',headers=h,json={'text':'后文','expected_revision_no':1})
-        assert c.get('/api/analysis/runs/'+r['id']).json()['stale']
+        # M14: an append preserves the exact input; history is not stale evidence.
+        old_run=c.get('/api/analysis/runs/'+r['id']).json()
+        assert not old_run['stale'] and old_run['historical_revision']
         assert c.post('/api/analysis/chunks/0/run',headers=h,json=b).status_code==409
 
 async def session_ready(path,text=SOURCE,settings=None):

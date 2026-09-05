@@ -1,29 +1,32 @@
-# NovelTool v0.13.0 发布验收
+# NovelTool v0.17.0 发布验收
 
-## 源码与测试
+## 版本与环境
 
-本版测试以警告视为错误执行，288 项通过。发布脚本将完整源代码压缩后，再解压到独立目录重新执行同一测试套件。全部本地 JavaScript 通过 node --check；所有 Python 模块通过 compileall。应用代码语句覆盖率 95.4%，不含 JavaScript，不等于无缺陷保证。
+完整源码：v0.17.0 / M17。项目 Schema：14。运行环境与实际依赖版本见 verification/environment.json；应用版本、数据库版本、测试环境版本是三个独立概念。
 
-Python 3.11 的语法检查通过；实际运行环境为 Linux / Python 3.13.5。没有宣称在 Python 3.11/3.12 的实际依赖环境中完成同等运行测试。
+## 重现命令
 
-## wheel 构建和安装资源
+```bash
+python -m pytest -q -W error
+python -m coverage run --source=noveltool -m pytest -q -W error
+python -m compileall -q noveltool
+for f in noveltool/static/*.js; do node --check "$f"; done
+python -m pip wheel . --no-deps --no-build-isolation -w /tmp/noveltool-wheels
+python -m pip install --no-deps --target /tmp/noveltool-installed /tmp/noveltool-wheels/noveltool-0.17.0-py3-none-any.whl
+# 需要额外的 playwright 和 Chromium；桥接限制在脚本与测试报告中明确说明。
+python tools/browser_smoke.py --browser /usr/bin/chromium --output /tmp/noveltool-ui-check
+# --old-source 为此前发布的 v0.13.0 完整源码目录。
+python tools/release_smoke.py --installed /tmp/noveltool-installed --old-source /path/to/noveltool-v0.13.0 --output /tmp/noveltool-release-check
+```
 
-实际执行了 `python -m pip wheel . --no-deps --no-build-isolation`，构建 `noveltool-0.13.0-py3-none-any.whl`，随后 `pip install --no-deps --target <独立目录>`。在源代码树外，使用安装目录导入，检查版本和包路径，创建全新数据库，访问 13 个页面/静态资源 URL，全部 HTTP 200；11 个 SQL 迁移脚本及 drafts.py 均在安装包内，数据库 Schema 为 11。
+## 实际完成
 
-资源包括正文、导入、分析、设定、时间线、构思、状态/上下文、续写、模型测试与项目设置页；续写页确实包含最终草稿编辑器。构建时唯一观察到的 pip 警告是本环境缓存目录不可写，构建和安装均成功。wheel 用于安装验证，交付主件仍是完整源代码 ZIP。
+完整源码重新解压/复制后 330 项测试通过。wheel 的静态页面、JavaScript、CSS 和 14 个 SQL 脚本均实际载入；独立进程升级、旧备份重开、候选/草稿保留、撤销、真实模型 HTTP 测试桩、退出/强制终止及备份下载均验证。浏览器验收真实执行 JS，但网络经 Python 测试桥接，不宣称原生 CSP/网络完全验证。
 
-## 从 v0.6.0 的实际升级
+原始机器可读验收记录位于 verification/。TEST_REPORT.md 说明覆盖范围和未验证部分。README.md 解释整体结构、每条流程及保存/恢复边界；CHANGELOG.md 单独记录版本差异。
 
-从本次输入的 v0.6.0 源码 ZIP 解压运行旧程序，而不是用新程序伪造旧项目。旧程序创建包含中文、空白、换行、emoji 的正文，做一次手工修改并创建分块计划，关闭后由 v0.13.0 打开。
+## 包内容与排除
 
-升级前自动生成 SQLite backup；备份保持 Schema 5，新项目升级为 Schema 11，foreign_key_check 无错误。旧正文 revision 和分块计划均存在；执行撤销后逐字恢复 v0.6.0 修改前的正文；能创建新计划并预览写作上下文。升级路径确已运行，但不保证能自动修复外部损坏的数据库。
+源码包含应用、测试、SQL、HTML/JS/CSS、可选验收脚本和文档。排除个人项目数据库、API key、虚拟环境、构建产物、Python 缓存、浏览器截图及字体文件。ZIP 是独立完整版本，不要求先安装旧包。SHA256 校验文件与下载包同时提供。
 
-## 浏览器和模型验证的范围
-
-实际 Chromium 执行发货的 HTML/CSS/JS，使用 Python HTTP 桥接访问实际 FastAPI 服务。续写页完成两个候选选段混合、补写、自动内存保存、强制磁盘保存、跨页面冲突、重新载入、确认和重复确认测试；只发生最初两次模拟模型请求。发生冲突时本地文本未被覆盖，确认后正文逐字一致。
-
-环境阻止 Chromium 原生访问回环地址，所以这是离线 DOM + 真实 JavaScript + 实时 HTTP 的验证，不是浏览器原生网络、Origin/CSP 的完整端到端验收。模拟模型不能替代用户真实小模型；没有验收其写作质量或事实理解能力。
-
-## 尚未交付
-
-M14 增量语义同步、M15 AI 返修执行、M16 一致性提醒、M17 最终恢复与收尾。确认正文不会自动更新人物和事件；当前需重建分块分析或人工核对。不要把软件能保存续写视为所有小说功能已完成。
+数据库升级单向。运行新版本前停止旧进程；升级备份自动生成，常规备份可通过维护页下载。不能把升级后的数据库直接交给旧程序；回退使用备份副本的新路径。工具中所有测试项目和临时模型服务均为可丢弃测试资料，不接触个人小说。

@@ -39,7 +39,9 @@ class AnalysisJobs:
         return self.active_id is not None
 
     def progress_locked(self, plan_id: str, passes: list[str], total: int) -> dict:
-        latest, success = {}, set()
+        reused = self.session.semantic.reuse_for_plan_locked(plan_id)
+        latest = {key: 'done' for key in reused if key[1] in passes}
+        success = set(latest)
         for row in self.session.store.connection.execute(
                 "SELECT ordinal,pass_type,schema_key,status FROM analysis_runs WHERE plan_id=? ORDER BY rowid", (plan_id,)):
             kind = row["pass_type"]
@@ -57,7 +59,7 @@ class AnalysisJobs:
     async def start(self, plan_id: str, expected: int, passes: list[str], retry_failed: bool, *, transport=None) -> dict:
         s = self.session
         async with s.lock:
-            if self.busy or s.model_gate.locked() or s.generation.busy:
+            if self.busy or s.model_gate.locked() or s.generation.busy or s.consistency.busy:
                 raise LLMError("busy", "已有分析任务或模型请求，请先完成或暂停")
             if not passes or len(passes) != len(set(passes)) or any(p not in SCHEMAS for p in passes):
                 raise ManuscriptError("请选择不重复的 facts / links / narrative 分析类型")

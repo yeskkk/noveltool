@@ -162,7 +162,7 @@ class IdeaService:
 
     async def generate(self, body: IdeaRequest, *, transport=None):
         s = self.session
-        if s.model_gate.locked() or s.jobs.busy or s.generation.busy:
+        if s.model_gate.locked() or s.jobs.busy or s.generation.busy or s.consistency.busy:
             raise LLMError("busy", "模型正在执行其他任务，请先等待或暂停它")
         async with s.model_gate:
             async with s.lock:

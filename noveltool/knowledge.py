@@ -1,7 +1,7 @@
 """Read-only, in-memory projection of validated observations.
 
-SQLite retains history; this catalog selects the latest successful run for each
-current-plan chunk/pass. Failed retries never erase successful results. Textual
+SQLite retains history; this catalog selects source-valid, non-overlapping
+successful runs across revisions and plans. Failed retries never erase successful results. Textual
 name matches are conservative, conflicts stay visible, and no 'confidence number'
 is used as proof. M9 builds editable overlays on this same projection.
 """
@@ -32,15 +32,8 @@ def entity_id(project_id: str, kind: str, name: str) -> str:
 
 
 def load_records(session) -> tuple[list[dict], list[str]]:
-    plan = session.imports.last_plan
-    if plan is None or plan.base_revision_no != session.manuscript.revision_no:
-        return [], []
-    latest = {}
-    for run in session.store.connection.execute(
-            "SELECT rowid,* FROM analysis_runs WHERE plan_id=? AND status='done' ORDER BY rowid", (plan.id,)):
-        key = run["pass_type"]
-        if key in SCHEMAS and run["schema_key"] == SCHEMAS[key][1]:
-            latest[(run["ordinal"], key)] = run
+    session.semantic.refresh_locked()
+    latest = {run['id']: run for run in session.semantic.selected}
     blocks = {b.id: b.text for b in session.manuscript.blocks}
     offsets, cursor = {}, 0
     for b in session.manuscript.blocks:
@@ -269,4 +262,5 @@ class KnowledgeService:
                     "version": self.version, "profiles": [p.model_dump() for p in self.session.settings.profiles.values()],
                     "entries": self.session.settings.entry_views_locked(), "text_length": len(self.session.manuscript.text),
                     "observations": self.records,
+                    "semantic_sync": self.session.semantic.status_locked(),
                     "notice": "人工设定与自动观察分开保存。人工条目不会被分析覆盖；冲突和失效定位需要核对。"}
