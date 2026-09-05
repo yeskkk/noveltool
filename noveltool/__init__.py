@@ -1,3 +1,2 @@
-"""Local-first novel editing assistant."""
-__version__ = "0.6.0"
-MILESTONE = "M6"
+__version__ = "0.13.0"
+MILESTONE = "M13"

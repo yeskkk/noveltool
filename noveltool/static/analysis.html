@@ -1,0 +1,15 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NovelTool · 分块分析</title><link rel="stylesheet" href="/static/app.css"><script src="/static/workspace.js" defer></script><script src="/static/analysis.js" defer></script></head><body>
+<header class="topbar"><div><div class="eyebrow">LOCAL NOVEL WORKSPACE</div><h1>NovelTool <span>v{{VERSION}}</span></h1></div><nav><a href="/manuscript">正文</a><a href="/import">导入与分块</a><a href="/analysis" aria-current="page">分析</a><a href="/settings">设定</a><a href="/timeline">时间线</a><a href="/ideas">构思</a><a href="/context">状态/上下文</a><a href="/generation">续写</a><a href="/model">模型测试</a><a href="/">项目设置</a></nav></header>
+<main><section class="intro"><h2>从原文提取可追溯的观察</h2><p>先在“导入与分块”创建计划。分析结果只进入待审区，不修改正文、不直接成为正式设定。每次调用均使用当前分块的核心文本及少量重叠上下文。</p></section>
+<div id="message" class="message" role="status">正在读取计划…</div>
+<section class="card"><h3>分析一个分块</h3><p id="plan-info" class="hint"></p><label>任务类型<select id="pass"><option value="facts">事实、人物状态与事件</option><option value="links">关系、伏笔与问题</option><option value="narrative">局部摘要与叙事特征</option></select></label><label>分块<select id="chunk"></select></label>
+<div class="actions"><button id="preview">预览模型上下文（不调用模型）</button><button id="run" class="primary">分析这个分块</button><button id="refresh">刷新结果</button></div>
+<details><summary>实际发送的上下文与估计预算</summary><pre id="prompt" class="wrapped"></pre></details></section>
+<section class="card"><h3>全书分析与断点续跑</h3><p class="hint">默认顺序运行三种窄任务，跳过当前计划已成功的分块。暂停会等待正在运行的请求保存后生效；重启不会自动调用模型。修改正文会停止旧任务。</p>
+<label><input type="checkbox" id="job-facts" checked> 事实</label><label><input type="checkbox" id="job-links" checked> 关系与线索</label><label><input type="checkbox" id="job-narrative" checked> 摘要与风格</label><label><input type="checkbox" id="retry-failed" checked> 重新尝试失败分块</label>
+<button id="start-job" class="primary">开始 / 继续未完成分析</button><button id="pause-job">完成当前分块后暂停</button><p id="job-status" class="hint"></p></section>
+<section class="card"><h3>自动归并概览</h3><button id="show-catalog">刷新归并结果（不调用模型）</button><p id="catalog-counts" class="hint"></p><details><summary>实体、事件、关系、线索和冲突详情</summary><pre id="catalog" class="wrapped"></pre></details></section>
+<section class="card"><h3>运行记录</h3><p class="hint">失败可重试；重试创建新记录。正文修改后旧结果显示过期，不会悄悄套用到新版本。</p><div id="runs"></div></section>
+<section class="card"><h3>候选事实及原文证据</h3><p id="result-meta" class="hint">选择一条运行记录查看。</p><div id="observations"></div></section>
+</main><footer>模型输出不可信 · 证据引用可追溯 · 已确认正文独立保存</footer></body></html>

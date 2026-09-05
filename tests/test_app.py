@@ -9,7 +9,7 @@ def test_home_and_static_assets_are_local(client):
     response = client.get("/")
     assert response.status_code == 200
     assert __version__ in response.text
-    assert "自动小说分析与续写尚未实现" in response.text
+    assert "设定编辑与时间线已接通" in response.text
     assert "https://" not in response.text
     for path in ["/static/app.js", "/static/app.css"]:
         assert client.get(path).status_code == 200

@@ -16,6 +16,14 @@ from .manuscript import count_chars, text_hash, ManuscriptError, validate_range
 from .llm import LLMRun, persist_runs
 from .structured_llm import ValidationRecord
 from .import_service import ImportService
+from .analysis import AnalysisService
+from .analysis_jobs import AnalysisJobs
+from .knowledge import KnowledgeService
+from .settings import SettingsService
+from .ideas import IdeaService
+from .state import StateReducer
+from .context import ContextBuilder
+from .generation import GenerationService
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +92,14 @@ class ProjectSession:
         self._last_attempt = time.monotonic()
         self._closed = False
         self.imports = ImportService(self)
+        self.analysis = AnalysisService(self)
+        self.jobs = AnalysisJobs(self)
+        self.settings = SettingsService(self)
+        self.knowledge = KnowledgeService(self)
+        self.ideas = IdeaService(self)
+        self.state_reducer = StateReducer(self)
+        self.context = ContextBuilder(self)
+        self.generation = GenerationService(self)
 
     async def update_config(self, config: ProjectConfig, expected: int) -> bool:
         async with self.lock:
@@ -139,6 +155,7 @@ class ProjectSession:
             if cur.rowcount != 1:
                 from .db import SaveFailedError
                 raise SaveFailedError("结构化校验记录没有对应的模型调用")
+        self.generation.drafts.persist_pending(conn)
         if plan is not None:
             persist_plan(conn, plan)
 
@@ -177,6 +194,7 @@ class ProjectSession:
         self.project.dirty.clear()
         self._pending_llm_runs.clear()
         self._pending_validations.clear()
+        self.generation.drafts.mark_persisted()
         self.project.last_save_error = None
         self._last_attempt = time.monotonic()
         return True
@@ -248,6 +266,7 @@ class ProjectSession:
         self.project.dirty.clear()
         self._pending_llm_runs.clear()
         self._pending_validations.clear()
+        self.generation.drafts.mark_persisted()
         self.project.last_save_error = None
         return True
 
@@ -291,6 +310,8 @@ class ProjectSession:
             return
         self._stop.set()
         try:
+            await self.generation.close()
+            await self.jobs.close()
             if self._autosave_task is not None:
                 await self._autosave_task
             await self.save()

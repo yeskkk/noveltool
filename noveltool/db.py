@@ -260,7 +260,7 @@ class ProjectStore:
         """
         if not dirty:
             return data
-        if not dirty <= {"meta", "config", "llm_runs"}:
+        if not dirty <= {"meta", "config", "llm_runs", "generation_drafts"}:
             raise SaveFailedError("发现未知的 dirty 分类")
         if data.meta.id != self._project_id or data.meta.data_version <= expected_version:
             raise SaveFailedError("项目 ID 或数据版本不合法")

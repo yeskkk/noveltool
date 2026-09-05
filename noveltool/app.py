@@ -9,6 +9,8 @@ import secrets
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+import json
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -20,6 +22,11 @@ from .manuscript import ManuscriptError, RevisionConflictError
 from .manuscript_routes import router as manuscript_router
 from .llm_routes import router as llm_router
 from .import_routes import router as import_router
+from .analysis_routes import router as analysis_router
+from .settings_routes import router as settings_router
+from .idea_routes import router as idea_router
+from .context_routes import router as context_router
+from .generation_routes import router as generation_router
 from .llm import LLMError
 from .structured_llm import StructuredError
 
@@ -103,7 +110,19 @@ def create_app(project_path: Path, *, llm_transport=None) -> FastAPI:
     app.include_router(manuscript_router)
     app.include_router(llm_router)
     app.include_router(import_router)
+    app.include_router(analysis_router)
+    app.include_router(settings_router)
+    app.include_router(idea_router)
+    app.include_router(context_router)
+    app.include_router(generation_router)
     app.state.llm_transport = llm_transport
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_error(request: Request, exc: RequestValidationError):
+        # Do not echo whole manuscripts or malformed Unicode in validation errors.
+        errors = [{k: error[k] for k in ("type", "loc", "msg") if k in error} for error in exc.errors()]
+        return Response(content=json.dumps({"detail": errors}, ensure_ascii=True),
+                        media_type="application/json", status_code=422)
 
     @app.exception_handler(StructuredError)
     async def structured_error(request: Request, exc: StructuredError):

@@ -55,3 +55,7 @@ textarea:focus {outline:2px solid #65917a;outline-offset:2px;}
 #history {max-height:260px;overflow:auto;font-size:13px;} #history p {border-bottom:1px solid #eee;padding-bottom:6px;}
 
 .range-map {white-space:pre-wrap;overflow-wrap:anywhere;font-size:.78rem;max-height:16rem;overflow:auto;}
+
+.wrapped { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 34rem; overflow: auto; }
+.observation { border-top: 1px solid #d4d9de; padding: 1rem 0; }
+.observation blockquote { margin: .5rem 0; border-left: 3px solid #8398a6; padding-left: 1rem; white-space: pre-wrap; }

@@ -1,6 +1,6 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NovelTool · TXT 导入与分块</title><link rel="stylesheet" href="/static/app.css"><script src="/static/import.js" defer></script></head><body>
-<header class="topbar"><div><div class="eyebrow">LOCAL NOVEL WORKSPACE</div><h1>NovelTool <span>v{{VERSION}}</span></h1></div><nav><a href="/manuscript">正文</a><a href="/import" aria-current="page">导入与分块</a><a href="/model">模型测试</a><a href="/">项目设置</a></nav></header>
+<header class="topbar"><div><div class="eyebrow">LOCAL NOVEL WORKSPACE</div><h1>NovelTool <span>v{{VERSION}}</span></h1></div><nav><a href="/manuscript">正文</a><a href="/import" aria-current="page">导入与分块</a><a href="/analysis">分析</a><a href="/settings">设定</a><a href="/timeline">时间线</a><a href="/ideas">构思</a><a href="/context">状态/上下文</a><a href="/generation">续写</a><a href="/model">模型测试</a><a href="/">项目设置</a></nav></header>
 <main><section class="intro"><h2>把长篇文本准备好</h2><p>先核对编码，再确认导入，最后按上下文预算分块。本页不调用模型，也不会自动分析小说。</p></section>
 <div id="message" class="message" role="status">正在读取项目…</div>
 <section class="card"><h3>1 · 选择文件与编码</h3><p class="hint">自动检测不能判断所有编码；即使解码成功也请核对预览，乱码时手动选 GB18030 等正确编码。只向空正文导入主小说。最多 20 MiB、500 万 Unicode 字符。原始文件另存于项目库中，正文只统一 BOM 与换行。</p>
