@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 def model_signature(cfg) -> tuple:
     return tuple(getattr(cfg, k) for k in ("api_base_url", "api_key_env", "analysis_model",
-                  "analysis_temperature", "context_window", "context_safety_ratio"))
+                  "analysis_temperature", "context_window", "context_safety_ratio", "analysis_protocol", "small_source_chars", "small_output_tokens", "small_max_entities", "auto_chinese"))
 
 
 class AnalysisJobs:
@@ -43,15 +43,16 @@ class AnalysisJobs:
         latest = {key: 'done' for key in reused if key[1] in passes}
         success = set(latest)
         for row in self.session.store.connection.execute(
-                "SELECT ordinal,pass_type,schema_key,status FROM analysis_runs WHERE plan_id=? ORDER BY rowid", (plan_id,)):
+                "SELECT ordinal,pass_type,schema_key,status,quality_json FROM analysis_runs WHERE plan_id=? ORDER BY rowid", (plan_id,)):
             kind = row["pass_type"]
             if kind not in passes or kind not in SCHEMAS or row["schema_key"] != SCHEMAS[kind][1]:
                 continue
             key = (row["ordinal"], kind)
-            latest[key] = row["status"]
-            if row["status"] == "done":
+            complete = json.loads(row["quality_json"]).get("complete", True)
+            latest[key] = "partial" if row["status"] == "done" and not complete else row["status"]
+            if row["status"] == "done" and complete:
                 success.add(key)
-        failed = {key for key, status in latest.items() if status in {"failed", "interrupted"} and key not in success}
+        failed = {key for key, status in latest.items() if status in {"failed", "interrupted", "partial"} and key not in success}
         return {"total": total*len(passes), "completed": len(success), "failed": len(failed),
                 "remaining": total*len(passes)-len(success),
                 "_success": success, "_latest": latest}
@@ -111,7 +112,7 @@ class AnalysisJobs:
                     key = (ordinal, kind)
                     if key in progress["_success"]:
                         continue
-                    if not retry_failed and progress["_latest"].get(key) in {"failed", "interrupted"}:
+                    if not retry_failed and progress["_latest"].get(key) in {"failed", "interrupted", "partial"}:
                         continue
                     try:
                         result = await s.analysis.run_chunk(plan_id, ordinal, expected, transport=transport,
@@ -122,7 +123,10 @@ class AnalysisJobs:
                         # Bad content in one chunk does not prevent other chunks.
                         continue
                     except LLMError as exc:
-                        if exc.code in {"configuration", "context_budget", "busy", "connection", "http_error", "timeout"}:
+                        if exc.code == "paused":
+                            await self._status(jid, "paused", str(exc))
+                            return
+                        if exc.code in {"configuration", "context_budget", "busy", "stale_input", "connection", "http_error", "timeout"}:
                             await self._status(jid, "paused", str(exc))
                             return
                         # E.g. truncated output; inspect and explicitly retry later.
@@ -174,6 +178,11 @@ class AnalysisJobs:
             job["progress"] = {k: v for k, v in progress.items() if not k.startswith("_")}
             job["stale"] = job["base_revision_no"] != s.manuscript.revision_no
             job["active"] = self.active_id == job["id"]
+            active=s.store.connection.execute("SELECT id FROM analysis_runs WHERE plan_id=? AND status='running' ORDER BY rowid DESC LIMIT 1",(job['plan_id'],)).fetchone()
+            if active:
+                steps=[dict(r) for r in s.store.connection.execute("SELECT status,task_label FROM model_steps WHERE owner_type='analysis' AND owner_id=? ORDER BY rowid",(active['id'],))]
+                job['micro']={'completed':sum(r['status']=='complete' for r in steps),'attempted':len(steps),
+                    'current':next((r['task_label'] for r in reversed(steps) if r['status']=='running'),None)}
             return {"job": job}
 
     async def close(self):

@@ -95,6 +95,8 @@ class ProjectSession:
         self._last_attempt = time.monotonic()
         self._closed = False
         self.startup_recovery = startup_recovery_counts(store.connection)
+        store.connection.execute("UPDATE language_outputs SET status='interrupted' WHERE status='running'")
+        store.connection.execute("UPDATE model_steps SET status='interrupted',error='上次退出时小问题尚未完成；成功检查点仍保留' WHERE status='running'")
         self.imports = ImportService(self)
         self.analysis = AnalysisService(self)
         self.jobs = AnalysisJobs(self)
@@ -151,7 +153,7 @@ class ProjectSession:
                     row.update(validation_status=record.status, validation_error=record.error)
             return [{k: row.get(k) for k in ("id","purpose","model","status","error_code",
                      "error_message","finish_reason","retained","elapsed_ms","finished_at",
-                     "validation_status","validation_error")}
+                     "validation_status","validation_error","usage_json","requested_max_tokens","input_token_estimate")}
                     for row in rows[:20]]
 
     def _persist_extras(self, conn, plan: RevisionPlan | None = None) -> None:

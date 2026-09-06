@@ -127,6 +127,7 @@ def build_package(body:ContextRequest,config:ProjectConfig,text:str,state:dict) 
     safe=int(config.context_window*config.context_safety_ratio)
     task={"kind":body.task_type,"author_instruction":body.instruction,"min_chars":a,"max_chars":b,
           "length_rule":"去掉 Unicode 空白后的字符数量，包含标点","output":"只写本次小说正文"}
+    if config.auto_chinese:task['output_language']='简体中文；正文中的既有人名和专名原样保留'
     required=[];optional=[];warnings=list(state.get("warnings",[]))
     if body.task_type=="rewrite":
         required.append(ContextSection("target","待替换的原文（完整）",text[start:end],100,True,30,start))

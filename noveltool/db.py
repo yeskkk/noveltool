@@ -240,9 +240,11 @@ class ProjectStore:
             values = dict(config_rows[0])
             if values.pop("project_id") != meta.id:
                 raise InvalidProjectError("配置不属于当前项目")
-            if type(values["retain_llm_logs"]) is not int or values["retain_llm_logs"] not in (0, 1):
-                raise InvalidProjectError("retain_llm_logs 必须为 0 或 1")
-            values["retain_llm_logs"] = bool(values["retain_llm_logs"])
+            for flag in ('retain_llm_logs','auto_chinese'):
+                if flag not in values:continue  # Old schema: validated defaults until migration.
+                if type(values[flag]) is not int or values[flag] not in (0,1):
+                    raise InvalidProjectError(f"{flag} 必须为 0 或 1")
+                values[flag]=bool(values[flag])
             config = ProjectConfig.model_validate(values)
             if self.connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
                 raise InvalidProjectError("项目外键检查失败")

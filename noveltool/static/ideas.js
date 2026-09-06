@@ -22,8 +22,10 @@
   }
   function draw(){
     $("editor").hidden=!proposal?.draft; if(!proposal?.draft)return;
-    const accepted=proposal.status==="accepted";
-    $("proposal-info").textContent=`${proposal.status} · 草稿版本 ${proposal.version}${proposal.stale?" · 基线已改变，不能直接确认":""}${proposal.requires_review?" · 经过修复，请核对含义":""}`;
+    const accepted=proposal.status==="accepted"||proposal.status==="running";
+    $("resume-steps").disabled=accepted||proposal.stale||proposal.quality?.complete!==false;
+    $("step-audit").textContent=JSON.stringify({quality:proposal.quality,steps:proposal.steps},null,2);
+    $("proposal-info").textContent=`${proposal.status} · 草稿版本 ${proposal.version}${proposal.stale?" · 基线已改变，不能直接确认":""}${proposal.requires_review?" · 小问题组合/修复结果，请核对含义":""}${proposal.quality?.complete===false?" · 部分问题未完成":""}`;
     $("draft-fields").disabled=accepted;$("save-draft").disabled=accepted;$("accept").disabled=accepted||proposal.stale;
     const parent=$("draft-body");parent.replaceChildren();
     input(parent,"故事前提摘要",draft.premise_summary,v=>draft.premise_summary=v,true);
@@ -54,6 +56,9 @@
   function load(p){proposal=p;draft=p.draft?structuredClone(p.draft):null;dirty=false;draw();
     if(!p.draft)U.tell(p.error||`提案状态：${p.status}`);}
   async function refresh(){
+    const cfg=(await U.api("/api/config")).config;
+    $("output-tokens").disabled=cfg.analysis_protocol==="small";
+    $("step-info").textContent=cfg.analysis_protocol==="small"?`小问题模式：每次初始输出 ${cfg.small_output_tokens} token（到项目设置调整），本页旧 JSON 总预算不参与限额。`:"严格 JSON 模式，使用本页预算。";
     catalog=await U.api("/api/settings");$("project-info").textContent=`当前正文 ${catalog.text_length} 字符，${catalog.entities.length} 个实体。构思使用分析模型。`;
     $("generate").disabled=working||catalog.text_length>0;
     if(proposal)load(await U.api(`/api/ideas/${proposal.id}`));await history();
@@ -65,9 +70,16 @@
     try{const p=await U.api("/api/ideas",{method:"POST",body:JSON.stringify({idea_text:$("idea-text").value,expected_version:catalog.version,max_tokens:Number($("output-tokens").value)})});load(p);await history();U.tell("提案已保存。请检查并编辑，确认前不会影响设定。");}
     catch(e){U.tell(e.message,true);await history().catch(()=>{});}finally{working=false;$("generate").disabled=catalog?.text_length>0;}
   });
+  $("resume-steps").addEventListener("click",async()=>{
+    if(working||dirty){U.tell("先保存或保留当前编辑；已有人工修改的提案不会被自动恢复覆盖。",true);return;}
+    working=true;
+    try{load(await U.api(`/api/ideas/${proposal.id}/resume`,{method:"POST",body:JSON.stringify({expected_version:catalog.version,expected_proposal_version:proposal.version})}));await history();U.tell("小问题恢复完成，请核对完成度和提案。");}
+    catch(e){U.tell(e.message,true);}finally{working=false;}
+  });
   $("save-draft").addEventListener("click",async()=>{try{load(await U.api(`/api/ideas/${proposal.id}/draft`,{method:"PUT",body:JSON.stringify({expected_proposal_version:proposal.version,draft})}));U.tell("提案草稿已保存，正式设定未变。");}catch(e){U.tell(e.message,true);}});
   $("accept").addEventListener("click",async()=>{if(!confirm("确认把当前草稿写成人工初始设定？这不会生成正文。"))return;
-    try{const r=await U.api(`/api/ideas/${proposal.id}/accept`,{method:"POST",body:JSON.stringify({expected_proposal_version:proposal.version,expected_version:catalog.version,draft})});catalog=r.settings;load(r.proposal);await history();U.tell("已在一个事务中确认初始设定。到“设定”页继续编辑；正文仍为空。");}catch(e){U.tell(e.message,true);}});
+    try{const r=await U.api(`/api/ideas/${proposal.id}/accept`,{method:"POST",body:JSON.stringify({expected_proposal_version:proposal.version,expected_version:catalog.version,draft,acknowledge_incomplete:$("accept-partial").checked})});catalog=r.settings;load(r.proposal);await history();U.tell("已在一个事务中确认初始设定。到“设定”页继续编辑；正文仍为空。");}catch(e){U.tell(e.message,true);}});
+  setInterval(async()=>{if(!working)return;try{const all=await U.api("/api/ideas");const p=all.proposals[0];if(p?.step_progress)$("step-info").textContent=`小步骤已保存 ${p.step_progress.completed}/${p.step_progress.total} · ${p.step_progress.current||p.status}`;}catch(_){}},2000);
   window.addEventListener("beforeunload",e=>{if(dirty){e.preventDefault();e.returnValue="";}});
   U.init().then(refresh).then(()=>U.tell("输入想法，或者打开已有提案。页面读取不会调用模型。")).catch(e=>U.tell(e.message,true));
 })();

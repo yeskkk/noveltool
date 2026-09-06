@@ -7,7 +7,7 @@ async function api(path,options={}){
   const response=await fetch(path,{...options,headers,cache:"no-store",credentials:"same-origin"});const data=await response.json();
   if(!response.ok){const e=new Error(Array.isArray(data.detail)?data.detail.map(x=>x.msg).join("；"):data.detail||`HTTP ${response.status}`);e.partial=data.partial_text||"";e.raw=data.raw_output||"";throw e;}return data;
 }
-async function loadRuns(){const data=await api("/api/llm/runs");$("runs").replaceChildren();for(const run of data.runs){const row=document.createElement("p");row.textContent=`${run.status} · ${run.model} · ${run.elapsed_ms} ms · ${run.error_message||run.purpose} · ${run.retained?"日志内容开启":"仅元数据"} · 校验：${run.validation_status||"不适用"}${run.validation_error?" · "+run.validation_error:""}`;$("runs").append(row);}if(!data.runs.length)$("runs").textContent="尚无模型调用";}
+async function loadRuns(){const data=await api("/api/llm/runs");$("runs").replaceChildren();for(const run of data.runs){const row=document.createElement("p");row.textContent=`${run.status} · 上限 ${run.requested_max_tokens??"?"} · 输入估计 ${run.input_token_estimate??"?"} · 结束 ${run.finish_reason??"未知"} · 用量 ${run.usage_json??"{}"} · ${run.model} · ${run.elapsed_ms} ms · ${run.error_message||run.purpose} · ${run.retained?"日志内容开启":"仅元数据"} · 校验：${run.validation_status||"不适用"}${run.validation_error?" · "+run.validation_error:""}`;$("runs").append(row);}if(!data.runs.length)$("runs").textContent="尚无模型调用";}
 $("send").addEventListener("click",async()=>{
   if(busy)return;busy=true;$("send").disabled=true;$("result").value="";$("result-meta").textContent="";tell("正在等待模型响应…");
   try{const data=await api("/api/llm/test",{method:"POST",body:JSON.stringify({model_slot:$("slot").value,prompt:$("prompt").value,max_tokens:Number($("max-tokens").value)})});$("result").value=data.text;$("result-meta").textContent=`${data.run_id} · ${JSON.stringify(data.usage)}`;tell(data.notice);}
@@ -20,7 +20,7 @@ $("refresh-runs").addEventListener("click",()=>loadRuns().catch(e=>tell(e.messag
 async function structuredAction(useModel){
   if(busy)return;busy=true;for(const b of document.querySelectorAll("button"))b.disabled=true;
   $("source").readOnly=true;$("raw-output").readOnly=true;$("parsed-output").value="";$("validation-meta").textContent="校验中…";
-  tell(useModel?"正在调用分析模型；仅格式问题最多额外修复两次…":"只在本地检查，不发送网络请求…");
+  tell(useModel?"正在按项目协议调用分析模型；小问题模式会逐项请求并保留检查点…":"只在本地检查，不发送网络请求…");
   try{
     const body=useModel?{source:$("source").value}:{source:$("source").value,raw_output:$("raw-output").value};
     const data=await api(useModel?"/api/llm/structured-test":"/api/llm/validate",{method:"POST",body:JSON.stringify(body)});

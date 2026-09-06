@@ -15,7 +15,7 @@
   <main>
     <section class="intro">
       <h2>项目设置与保存状态。</h2>
-      <p>设置写作参数和本地接口。正文、分块分析、设定编辑与时间线已接通。续写、候选拼装和正文确认已接通；新正文自动设定同步尚未实现。</p>
+      <p>设置写作参数和本地接口。正文、分块分析、设定编辑与时间线已接通。续写、候选拼装和正文确认已接通；增量设定同步、AI 返修及一致性检查已接通。</p>
     </section>
     <section class="status-panel" aria-label="项目保存状态">
       <div><span class="label">当前项目</span><strong id="project-title">正在加载…</strong><small id="database-path"></small></div>
@@ -59,11 +59,24 @@
             <label>写作温度<input name="writer_temperature" type="number" min="0" max="10" step="0.01" required></label>
             <label>分析温度<input name="analysis_temperature" type="number" min="0" max="10" step="0.01" required></label>
           </div>
+          <h3 class="section-heading">小模型工作方式</h3>
+          <label>分析/构思协议<select name="analysis_protocol"><option value="small">小问题模式（推荐弱模型，不需要 JSON）</option><option value="strict">旧严格 JSON 模式（兼容回归/强模型）</option></select></label>
+          <div class="grid"><label>每个源片段最多字符<input name="small_source_chars" type="number" min="100" max="480" required></label>
+          <label>小问题首次输出 token<input name="small_output_tokens" type="number" min="256" max="8192" required></label>
+          <label>每片段最多实体数<input name="small_max_entities" type="number" min="1" max="6" required></label></div>
+          <p class="hint">一次只问一个短问题。会增加调用次数；成功小步骤单独保存、重试复用。来源范围由程序绑定，不要求模型复制引用；这类推断须在设定待审区人工接纳，失败小步骤不算同步覆盖完成。</p>
+          <h3 class="section-heading">结构化输出与截断诊断</h3>
+          <p class="hint">单次输出上限不同于总上下文上限。达到长度限制或返回未闭合 JSON 时，允许在预算内增大输出重新请求；不会拼接半截 JSON。每次尝试都记录真实上限、结束原因和服务报告用量。</p>
+          <div class="grid">
+          <label>结构化输出重试上限（token）<input name="structured_output_ceiling" type="number" min="512" max="65536" required></label>
+          <label>长度不足时额外重试次数<input name="output_retry_limit" type="number" min="0" max="2" required></label>
+          </div>
           <h3 class="section-heading">保存与运行</h3>
           <div class="grid">
             <label>自动保存间隔（秒）<input name="autosave_seconds" type="number" min="10" max="3600" step="1" required></label>
             <label>模型请求超时（秒）<input name="api_timeout_seconds" type="number" min="1" max="86400" step="1" required></label>
           </div>
+          <label class="checkbox"><input name="auto_chinese" type="checkbox">中文项目：新生成的描述/候选偏外语时自动分段转中文，保留转换前文本（需要额外模型调用；不改已确认正文）</label>
           <label class="checkbox"><input name="retain_llm_logs" type="checkbox">保留后续模型请求/响应日志（关闭不清除历史日志）</label>
           <div class="form-footer"><button type="submit" class="primary">应用配置到内存</button><small>默认每 60 秒批量写入；也可点击顶部立即保存。</small></div>
         </form>
@@ -82,7 +95,7 @@
         <section class="card guide">
           <div class="eyebrow">开发进度</div>
           <p><b>已完成</b><br>M0–M1 项目存储<br>M2 正文版本引擎<br>M3 正文编辑网页<br>M4 模型测试<br>M5 结构化校验<br>M6 原始 TXT 与分块计划<br>M7 单块分析<br>M8 全书分析与归并<br>M9 设定及时间线编辑<br>M10 从想法创建设定<br>M11 按位置状态与上下文预览<br>M12 独立续写候选及重试<br>M13 草稿拼装、集中保存和确认</p>
-          <p><b>下一小目标</b><br>M14 新正文增量语义同步；之后接入 AI 返修及一致性提醒。</p>
+          <p><b>下一小目标</b><br>M14–M17 已完成；当前版本增强小模型输出适配。</p>
           <p class="hint">点击顶部“正文”进入导入、选区修改和撤销页面。</p>
         </section>
       </aside>

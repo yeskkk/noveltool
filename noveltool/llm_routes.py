@@ -97,6 +97,23 @@ async def structured_test(body:DiagnosticRequest,request:Request):
             config=session.project.data.config
         async with LLMClient(config,on_run=session.record_llm_run,
                              transport=request.app.state.llm_transport) as llm:
+            if config.analysis_protocol == "small":
+                from types import SimpleNamespace
+                from uuid import uuid4
+                from .small_workflows import analyze_small
+                from .small_model import rows_for_owner
+                sid=uuid4().hex
+                package=SimpleNamespace(config=config,output_tokens=config.small_output_tokens,pass_type="facts",
+                    blocks={"B001":body.source},core_refs={"B001"},
+                    refs={"B001":{"block_id":"diagnostic-source","start_cp":0,"end_cp":len(body.source),"scope":"core"}})
+                result=await analyze_small(session,llm,package,sid,owner_type="diagnostic")
+                async with session.lock:
+                    steps=rows_for_owner(session,"diagnostic",sid)
+                return {"value":{"observations":result.records,"quality":result.quality,"steps":steps},
+                    "original_output":"\n\n".join(s['raw_output'] for s in steps),
+                    "used_output":"小问题结果由程序组成，诊断来源不是正文数据库引用。",
+                    "run_ids":result.run_ids,"repairs":result.repairs,"requires_review":True,
+                    "notice":"小问题诊断已保存回答检查点；未建立小说设定。请检查缺失步骤和输入来源，来源范围并不证明陈述正确。"}
             result=await StructuredLLM(llm,on_validation=session.record_validation).call(
                 messages=diagnostic_messages(body.source),schema=FactExtractionResult,model=config.analysis_model,
                 temperature=config.analysis_temperature,max_tokens=body.max_tokens,purpose="fact_diagnostic",

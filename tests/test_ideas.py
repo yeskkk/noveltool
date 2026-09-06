@@ -32,7 +32,7 @@ def transport(data=None):
 
 async def ready(path):
     s=ProjectSession(ProjectStore.open(path))
-    await s.update_config(ProjectConfig(analysis_model='fake'),s.project.data.meta.data_version)
+    await s.update_config(ProjectConfig(analysis_protocol="strict", analysis_model='fake'),s.project.data.meta.data_version)
     return s
 
 async def req(s,text='写一个侦探故事'):
@@ -150,9 +150,9 @@ def test_idea_cancel_busy_budget_and_text_guard(project_path):
             await s.model_gate.acquire()
             with pytest.raises(LLMError,match='其他任务'):await s.ideas.generate(request)
             s.model_gate.release()
-            await s.update_config(ProjectConfig(analysis_model='fake',context_window=2048),s.project.data.meta.data_version)
+            await s.update_config(ProjectConfig(analysis_protocol="strict", analysis_model='fake',context_window=2048),s.project.data.meta.data_version)
             with pytest.raises(LLMError,match='预算'):await s.ideas.generate(request)
-            await s.update_config(ProjectConfig(analysis_model='fake'),s.project.data.meta.data_version)
+            await s.update_config(ProjectConfig(analysis_protocol="strict", analysis_model='fake'),s.project.data.meta.data_version)
             started=asyncio.Event()
             async def block(r):started.set();await asyncio.Event().wait()
             task=asyncio.create_task(s.ideas.generate(await req(s),transport=httpx.MockTransport(block)))

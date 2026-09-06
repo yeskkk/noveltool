@@ -4,11 +4,11 @@
  const names={synced:'抽取已覆盖全文',needs_review:'覆盖完成，有修复结果待人工核对',pending:'有范围待同步'};
  async function refresh(){
   state=await U.api('/api/sync');const c=state.coverage;
-  $('coverage').textContent=`Revision ${c.revision_no} · ${names[c.status]} · ${c.selected_runs} 个有效分析单元`;
+  $('coverage').textContent=`Revision ${c.revision_no} · ${names[c.status]} · ${c.selected_runs} 个有效分析单元 · ${c.partial_runs||0} 个有部分问题未完成`;
   $('counts').textContent=Object.entries(c.coverage).map(([k,n])=>`${k}: ${n}/${c.total_chars} 字符`).join(' · ');
   $('notice').textContent=c.notice;
   $('start-sync').disabled=c.busy||!c.total_chars;
-  const j=state.job;$('job').textContent=j?`${j.status} · ${j.progress.completed}/${j.progress.total} 单元完成${j.error?' · '+j.error:''}${j.stale?' · 旧正文版本':''}`:'尚无同步或全书分析任务';
+  const j=state.job;$('job').textContent=j?`${j.status} · ${j.progress.completed}/${j.progress.total} 单元完成${j.error?' · '+j.error:''}${j.stale?' · 旧正文版本':''}${j.micro?' · '+j.micro.completed+'/'+j.micro.attempted+' 小步骤 · '+(j.micro.current||''):''}`:'尚无同步或全书分析任务';
   $('pause-sync').disabled=!j?.active;
   if(timer)clearTimeout(timer);timer=setTimeout(()=>refresh().catch(e=>U.tell(e.message,true)),2000);
  }

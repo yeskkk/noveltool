@@ -15,7 +15,13 @@ async function showRun(id){
     for(const e of o.evidence) card.append(ui.node("blockquote",e.quote),ui.node("small",`${e.scope} · ${e.block_id.slice(0,8)} · 字符 [${e.start_cp}, ${e.end_cp})`));
     $("observations").append(card);
   }
-  if(!r.observations.length) $("observations").textContent="没有候选事实（可能是空结果或运行失败）。";
+  if(r.quality?.protocol||r.steps?.length){
+    const report=ui.node("details"),head=ui.node("summary",`小步骤 ${r.quality.steps??r.steps.length} · ${r.quality.complete?"问题已逐项处理（仍需审核）":"部分问题未完成，不计完整同步"}`);
+    report.append(head,ui.node("p",r.quality.notice||"来源范围不是事实证明，请核对"));
+    for(const step of r.steps||[])report.append(ui.node("h4",`${step.status} · ${step.task_label}`),ui.node("pre",JSON.stringify(step.value,null,2)),ui.node("p",(step.warnings||[]).join("；")),ui.node("pre",step.raw_output||"原响应未保留，或复用了成功步骤"));
+    $("observations").append(report);
+  }
+  if(!r.observations.length) $("observations").append(ui.node("p","没有候选事实（可能是空结果或运行失败）；可在历史小步骤中查看已保存回答。"));
 }
 async function refresh(){
   const result=await ui.api("/api/import/plan"); plan=result.plan;
@@ -37,7 +43,7 @@ $("refresh").onclick=()=>refresh().catch(e=>ui.tell(e.message,true));
 let latestJob=null;
 async function pollJob(){
   try{latestJob=(await ui.api("/api/analysis/jobs/latest")).job;
-    $("job-status").textContent=latestJob?`${latestJob.status} · 完成 ${latestJob.progress.completed}/${latestJob.progress.total} · 失败 ${latestJob.progress.failed}${latestJob.error?" · "+latestJob.error:""}`:"没有全书任务。";
+    $("job-status").textContent=latestJob?`${latestJob.status} · 完成 ${latestJob.progress.completed}/${latestJob.progress.total} · 失败 ${latestJob.progress.failed}${latestJob.error?" · "+latestJob.error:""}${latestJob.micro?" · 小步骤 "+latestJob.micro.completed+"/"+latestJob.micro.attempted+" · "+(latestJob.micro.current||""):""}`:"没有全书任务。";
     $("start-job").disabled=!!latestJob?.active; $("pause-job").disabled=!latestJob?.active;
   }catch(e){ui.tell(e.message,true);}
 }

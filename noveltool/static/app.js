@@ -7,7 +7,7 @@ const titleForm = document.querySelector("#title-form");
 const message = document.querySelector("#message");
 const numericFields = new Set([
   "context_window", "context_safety_ratio", "min_chars", "max_chars", "candidate_count",
-  "writer_temperature", "analysis_temperature", "api_timeout_seconds", "autosave_seconds"
+  "small_source_chars", "small_output_tokens", "small_max_entities", "structured_output_ceiling", "output_retry_limit", "writer_temperature", "analysis_temperature", "api_timeout_seconds", "autosave_seconds"
 ]);
 let token = "";
 let loadedVersion = null;
@@ -86,7 +86,7 @@ configForm.addEventListener("submit", event => {
   event.preventDefault();
   action(async () => {
     const config = {};
-    for (const input of configForm.querySelectorAll("input[name]")) {
+    for (const input of configForm.querySelectorAll("input[name],select[name]")) {
       config[input.name] = input.type === "checkbox" ? input.checked
         : numericFields.has(input.name) ? Number(input.value) : input.value;
     }

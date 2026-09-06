@@ -104,13 +104,23 @@ function renderReviews(){
   const rows=data.observations.filter(r=>mode==="attention"?attention.has(r.id):r.status===mode);
   $("review-items").replaceChildren();
   for(const r of rows.slice(0,reviewLimit)){
-    const box=ui.node("article",undefined,"observation");box.append(ui.node("h4",`${titles[r.kind]} · ${r.status}`),ui.node("pre",JSON.stringify(r.payload,null,2),"wrapped"));showEvidence(box,r);
+    const box=ui.node("article",undefined,"observation");
+    const checked=ui.node("input");checked.type="checkbox";checked.dataset.observationId=r.id;
+    const label=ui.node("label","已核对该观察");label.prepend(checked);box.append(label);
+    box.append(ui.node("h4",`${titles[r.kind]} · ${r.status}`),ui.node("pre",JSON.stringify(r.payload,null,2),"wrapped"));showEvidence(box,r);
     for(const [decision,label] of [["accepted","接受观察（不是锁定）"],["rejected","拒绝"],["pending","恢复待审"]])box.append(ui.button(label,async()=>{acceptData(await ui.api("/api/settings/review",{method:"POST",body:JSON.stringify({expected_version:data.version,observation_ids:[r.id],decision})}));ui.tell("审核决定已保存。");}));
     $("review-items").append(box);
   }
   if(!rows.length)$("review-items").textContent="此筛选下没有观察。";
   $("more-reviews").hidden=rows.length<=reviewLimit;
 }
+$("accept-checked").onclick=async()=>{try{
+  const ids=[...$("review-items").querySelectorAll("input[data-observation-id]:checked")].map(x=>x.dataset.observationId);
+  if(!ids.length){ui.tell("请先核对并勾选需要接纳的观察。");return;}
+  if(ids.length>512)throw new Error("一次最多接纳512条，请分批核对");
+  if(!confirm(`确认接纳已核对的 ${ids.length} 条观察？来源范围不是事实正确性的证明。`))return;
+  acceptData(await ui.api("/api/settings/review",{method:"POST",body:JSON.stringify({expected_version:data.version,observation_ids:ids,decision:"accepted"})}));ui.tell("勾选观察的审核决定已事务保存。");
+}catch(e){ui.tell(e.message,true);}};
 $("review-filter").onchange=renderReviews;$("more-reviews").onclick=()=>{reviewLimit+=80;renderReviews();};
 $("refresh").onclick=async()=>{if(dirtyForm&&!confirm("刷新会丢弃当前未保存的表单内容，继续吗？"))return;try{await load();ui.tell("已重新读取当前设定。");}catch(e){ui.tell(e.message,true);}};
 for(const form of document.querySelectorAll("form"))form.addEventListener("input",()=>{dirtyForm=true;});

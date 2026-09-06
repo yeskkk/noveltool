@@ -93,7 +93,7 @@ def test_future_schema_rejected(project_path):
 def test_only_implemented_tables(project_path):
     with ProjectStore.open(project_path) as store:
         names = {row[0] for row in store.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        assert names == {"project_meta", "project_config", "revisions", "manuscript_blocks", "llm_runs", "source_imports", "chunk_plans", "analysis_runs", "observations", "analysis_jobs", "setting_entities", "setting_entries", "setting_changes", "idea_proposals", "generation_tasks", "generation_attempts", "analysis_reuse", "generation_rewrite_targets", "consistency_jobs", "consistency_units", "consistency_issues"}
+        assert names == {"project_meta", "project_config", "revisions", "manuscript_blocks", "llm_runs", "source_imports", "chunk_plans", "analysis_runs", "observations", "analysis_jobs", "setting_entities", "setting_entries", "setting_changes", "idea_proposals", "generation_tasks", "generation_attempts", "analysis_reuse", "model_steps", "language_outputs", "generation_rewrite_targets", "consistency_jobs", "consistency_units", "consistency_issues"}
 
 
 def test_flush_and_noop(project_path):

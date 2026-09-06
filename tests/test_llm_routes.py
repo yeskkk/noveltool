@@ -16,7 +16,7 @@ from test_llm import envelope
 def configure(client,headers):
     view=client.get('/api/config').json()
     client.put('/api/config',headers=headers,json={'expected_memory_version':view['memory_version'],
-      'config':{**view['config'],'writer_model':'writer','analysis_model':'analyzer'}})
+      'config':{**view['config'],'writer_model':'writer','analysis_model':'analyzer','analysis_protocol':'strict'}})
 
 
 def test_explicit_model_test_does_not_change_manuscript(project_path):
@@ -78,7 +78,7 @@ def test_requests_dont_hold_project_lock(project_path):
         async def handler(req):
             started.set();await release.wait();return httpx.Response(200,json=envelope())
         try:
-            async with LLMClient(ProjectConfig(writer_model='m'),on_run=session.record_llm_run,
+            async with LLMClient(ProjectConfig(analysis_protocol="strict", writer_model='m'),on_run=session.record_llm_run,
                                  transport=httpx.MockTransport(handler)) as llm:
                 task=asyncio.create_task(llm.complete(model='m',messages=[{'role':'user','content':'test'}]))
                 await started.wait()

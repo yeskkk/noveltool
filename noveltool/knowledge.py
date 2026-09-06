@@ -93,7 +93,7 @@ def build_graph(project_id: str, records: list[dict], profiles=()) -> dict:
         if r["status"] == "rejected":
             continue
         if r["requires_review"]:
-            reviews.append({"reason": "输出经过修复，等待人工核对", "observation_ids": [r["id"]]})
+            reviews.append({"reason": "弱模型来源范围推断或经过修复的输出，等待人工核对", "observation_ids": [r["id"]]})
             continue
         usable.append(r)
         if r["kind"] == "entity":

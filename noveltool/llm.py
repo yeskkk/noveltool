@@ -21,10 +21,14 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 class LLMError(RuntimeError):
     def __init__(self, code: str, message: str, *, run_id: str | None = None,
-                 partial_text: str = "", raw_response: str = ""):
+                 partial_text: str = "", raw_response: str = "",
+                 finish_reason: str | None = None, usage: dict | None = None,
+                 requested_max_tokens: int | None = None):
         super().__init__(message)
         self.code, self.run_id = code, run_id
         self.partial_text, self.raw_response = partial_text, raw_response
+        self.finish_reason, self.usage = finish_reason, usage or {}
+        self.requested_max_tokens = requested_max_tokens
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +47,8 @@ class LLMRun:
     started_at: str
     finished_at: str
     elapsed_ms: int
+    requested_max_tokens: int = 0
+    input_token_estimate: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +57,7 @@ class Completion:
     raw_response: str
     run_id: str
     finish_reason: str
-    usage: dict[str, int]
+    usage: dict
 
 
 def request_token_estimate(messages: list[dict[str, str]]) -> int:
@@ -132,18 +138,30 @@ class LLMClient:
                 if msg.get("refusal"):
                     raise LLMError("refusal", "模型拒绝了请求")
                 text, finish = msg.get("content"), choice.get("finish_reason")
+                supplied = data.get("usage")
+                if isinstance(supplied, dict):
+                    usage = {k: v for k, v in supplied.items()
+                             if k in {"prompt_tokens", "completion_tokens", "total_tokens"}
+                             and type(v) is int and v >= 0}
+                    for key in ("completion_tokens_details", "prompt_tokens_details"):
+                        details = supplied.get(key)
+                        if isinstance(details, dict):
+                            usage[key] = {k: v for k, v in details.items()
+                                          if isinstance(k, str) and type(v) is int and v >= 0}
+                if text is None and (finish == "length" or (finish == "stop" and isinstance(msg.get("reasoning_content"),str))):
+                    text = ""  # Some reasoning models exhaust the cap before visible content.
                 if not isinstance(text, str):
                     raise ValueError("content")
                 if finish != "stop":
                     code = "truncated" if finish == "length" else "unfinished"
-                    raise LLMError(code, "模型未完整结束文本（finish_reason 不是 stop）；不把截断内容当成功",
-                                   partial_text=text)
+                    detail = (f"模型达到单次输出上限：请求 max_tokens={max_tokens}，"
+                              f"服务报告 completion_tokens={usage.get('completion_tokens', '未知')}。"
+                              "这不表示总上下文已满。" if finish == "length" else
+                              f"模型结束原因为 {finish!r}，不是正常 stop。")
+                    raise LLMError(code, detail + " 不完整内容仅保留供诊断。", partial_text=text,
+                                   finish_reason=finish, usage=usage, requested_max_tokens=max_tokens)
                 if not text.strip():
                     raise LLMError("empty", "模型返回空正文")
-                supplied = data.get("usage")
-                if isinstance(supplied, dict):
-                    usage = {k: v for k, v in supplied.items()
-                             if k in {"prompt_tokens","completion_tokens","total_tokens"} and type(v) is int and v >= 0}
                 completion = Completion(text, raw, rid, finish, usage)
                 status = "ok"
             except (KeyError, IndexError, TypeError, ValueError, RecursionError) as exc:
@@ -157,7 +175,8 @@ class LLMClient:
         except httpx.HTTPError:
             error = LLMError("connection", "无法完成模型 HTTP 请求；请检查地址、服务与网络", run_id=rid)
         except LLMError as exc:
-            error = LLMError(exc.code, scrub(str(exc)), run_id=rid, partial_text=scrub(exc.partial_text), raw_response=raw)
+            error = LLMError(exc.code, scrub(str(exc)), run_id=rid, partial_text=scrub(exc.partial_text), raw_response=raw,
+                             finish_reason=finish, usage=usage, requested_max_tokens=max_tokens)
         finally:
             if self.on_run:
                 keep = self.config.retain_llm_logs
@@ -165,7 +184,7 @@ class LLMClient:
                              scrub(json.dumps(payload,ensure_ascii=False)) if keep else "",
                              raw if keep else "", error.code if error else None,
                              str(error) if error else None, finish if isinstance(finish,str) else None,
-                             json.dumps(usage),int(keep),started,utc_now(),max(0,int((time.monotonic()-clock)*1000)))
+                             json.dumps(usage),int(keep),started,utc_now(),max(0,int((time.monotonic()-clock)*1000)), max_tokens, estimate)
                 await self.on_run(run)
         if error:
             raise error

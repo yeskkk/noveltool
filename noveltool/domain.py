@@ -5,10 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 17
 APPLICATION_ID = 0x4E56544C  # "NVTL"; reject databases belonging to another program.
 
 
@@ -41,6 +42,13 @@ class ProjectConfig(StrictModel):
     api_timeout_seconds: int = Field(default=600, ge=1, le=86400)
     autosave_seconds: int = Field(default=60, ge=10, le=3600)
     retain_llm_logs: bool = True
+    structured_output_ceiling: int = Field(default=8192, ge=512, le=65536)
+    output_retry_limit: int = Field(default=1, ge=0, le=2)
+    auto_chinese: bool = True
+    analysis_protocol: Literal["small", "strict"] = "small"
+    small_source_chars: int = Field(default=400, ge=100, le=480)
+    small_output_tokens: int = Field(default=1536, ge=256, le=8192)
+    small_max_entities: int = Field(default=3, ge=1, le=6)
 
     @field_validator("api_base_url")
     @classmethod

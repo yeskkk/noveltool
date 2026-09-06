@@ -18,7 +18,8 @@ def create_v1(path):
         meta = ProjectMeta(id='a'*32, title='旧项目', schema_version=1, created_at=now, updated_at=now, saved_at=now)
         d = meta.model_dump()
         c.execute(f"INSERT INTO project_meta(singleton,{','.join(d)}) VALUES(1,{','.join('?' for _ in d)})", list(d.values()))
-        cfg = ProjectConfig(min_chars=123, max_chars=456).model_dump()
+        columns = {r[1] for r in c.execute('PRAGMA table_info(project_config)')}
+        cfg = {k:v for k,v in ProjectConfig(min_chars=123, max_chars=456).model_dump().items() if k in columns}
         c.execute(f"INSERT INTO project_config(project_id,{','.join(cfg)}) VALUES (?,{','.join('?' for _ in cfg)})", [meta.id, *cfg.values()])
 
 

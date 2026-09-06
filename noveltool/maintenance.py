@@ -21,6 +21,8 @@ from .revision import _revision_from_row, load_manuscript
 
 RECOVERY_TABLES = {
     'analysis_runs': ('running',),
+    'model_steps': ('running',),
+    'language_outputs': ('running',),
     'analysis_jobs': ('running', 'pausing'),
     'idea_proposals': ('running',),
     'generation_tasks': ('generating', 'pausing'),

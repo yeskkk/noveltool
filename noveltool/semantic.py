@@ -20,6 +20,14 @@ from .manuscript import ManuscriptError, text_hash
 from .structured_llm import strict_loads, StructuredError
 
 
+def json_quality(run: dict) -> dict:
+    try:
+        value = strict_loads(run.get('quality_json', '{}'))
+        return value if isinstance(value, dict) else {'complete':False}
+    except (ValueError, StructuredError):
+        return {'complete':False}
+
+
 def signature(refs: dict) -> tuple:
     """Prompt short names do not matter, but slice ordering and role do."""
     return tuple((role, tuple((v['block_id'], v['start_cp'], v['end_cp'])
@@ -80,6 +88,7 @@ class SemanticSync:
         # Newest success wins an overlapping source range. A failed retry never
         # enters this set, and a new empty result can deliberately replace old facts.
         chosen, intervals = [], {kind: [] for kind in SCHEMAS}
+        valid.sort(key=lambda r: (json_quality(r).get('complete', True), r['rowid']), reverse=True)
         for run in valid:
             spans = intervals[run['pass_type']]
             if any(run['start'] < b and a < run['end'] for a,b in spans):
@@ -90,7 +99,7 @@ class SemanticSync:
     def status_locked(self) -> dict:
         self.refresh_locked()
         s = self.session; size = len(s.manuscript.text)
-        coverage = {kind: sum(r['end']-r['start'] for r in self.selected if r['pass_type']==kind) for kind in SCHEMAS}
+        coverage = {kind: sum(r['end']-r['start'] for r in self.selected if r['pass_type']==kind and json_quality(r).get('complete',True)) for kind in SCHEMAS}
         ids = [r['id'] for r in self.selected if r['requires_review']]
         pending = 0
         for rid in ids:
@@ -100,7 +109,7 @@ class SemanticSync:
         complete = all(n == size for n in coverage.values())
         return {'revision_no': s.manuscript.revision_no, 'total_chars': size, 'coverage': coverage,
                 'status': ('needs_review' if pending or errors else 'synced') if complete else 'pending',
-                'covered': complete, 'pending_reviews': pending, 'validation_errors': errors,
+                'covered': complete, 'partial_runs': sum(not json_quality(r).get('complete',True) for r in self.selected), 'pending_reviews': pending, 'validation_errors': errors,
                 'selected_runs': len(self.selected), 'excluded_runs': self.excluded_count,
                 'busy': s.jobs.busy,
                 'notice': '覆盖完成只表示抽取流程完成，不保证事实正确。完整旧输入仍有效的分析会复用；失效范围不进入当前设定。返修对后文的因果影响需另外检查。'}
@@ -111,7 +120,7 @@ class SemanticSync:
 
     def reuse_for_plan_locked(self, plan_id: str) -> dict:
         self.refresh_locked()
-        valid = {r['id']: r for r in self.eligible}
+        valid = {r['id']: r for r in self.eligible if json_quality(r).get('complete', True)}
         return {(r['ordinal'],r['pass_type']): valid[r['run_id']]
                 for r in self.session.store.connection.execute('SELECT * FROM analysis_reuse WHERE plan_id=?',(plan_id,))
                 if r['run_id'] in valid}
@@ -138,6 +147,8 @@ class SemanticSync:
         capacity = baseline.effective_chunk_limit-CHUNK_OVERHEAD-settings.overlap_tokens
         retained=[]; compatible=[]
         for run in self.eligible:
+            if not json_quality(run).get('complete', True):
+                continue
             try:
                 if model_signature(ProjectConfig.model_validate_json(run['config_json'])) != model_signature(cfg):
                     continue

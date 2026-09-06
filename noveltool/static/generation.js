@@ -99,15 +99,28 @@
    if(!c){const el=U.node('section',undefined,'card'),title=U.node('h4',`候选 ${slot.index+1}`),meta=U.node('p',undefined,'hint'),text=U.node('textarea');text.className='prose';text.readOnly=true;text.setAttribute('aria-label',`候选 ${slot.index+1} 正文`);
     const retry=U.button('单独重新生成',async()=>{await saveDraft(false);load(await U.api(`/api/generation/${task.id}/regenerate/${slot.index}`,{method:'POST'}));U.tell('只重试这一项；上一可用版本会继续保留。');});
     const take=U.button('全部采用到草稿',()=>adopt(text.value)),part=U.button('选中文字插入草稿',()=>insertSelection(text));
+    const lang=U.node('details'),langSummary=U.node('summary','中文转换：原文与结果'),langBody=U.node('div');lang.append(langSummary,langBody);
+    const original=U.button('转换前文本采用到草稿',()=>adopt(c?.originalText||''));lang.append(original);
     const attempts=U.node('details'),summary=U.node('summary','尝试记录'),log=U.node('div');attempts.append(summary,log);
-    el.append(title,meta,text,take,part,retry,attempts);$("candidates").append(el);c={el,meta,text,retry,take,part,log,signature:''};cards.set(slot.index,c);}
+    el.append(title,meta,text,take,part,retry,lang,attempts);$("candidates").append(el);c={el,meta,text,retry,take,part,lang,langBody,original,originalText:'',languageId:null,log,signature:''};cards.set(slot.index,c);}
    const latest=slot.latest_attempt,candidate=slot.candidate;
    c.meta.textContent=candidate?`${candidate.char_count} 字 · ${labels[candidate.status]}${slot.duplicate_of!==null?` · 与候选 ${slot.duplicate_of+1} 完全重复`:''}${latest&&latest.id!==candidate.id?` · 最新尝试：${labels[latest.status]||latest.status}，保留上一可用版本`:''}`:(latest?`${labels[latest.status]||latest.status}：${latest.error||''}`:'尚未生成');
+   const language=candidate?.language||latest?.language;
+   c.lang.hidden=!language;
+   c.originalText=language?.original_text||'';
+   c.original.disabled=!language||task.status==='committed'||committing;
+   if(language&&c.languageId!==language.id){c.languageId=language.id;c.langBody.replaceChildren();
+     c.langBody.append(U.node('p',`${language.status==='complete'?'已完成中文转换':'部分转换失败/中断，未完成片段保留原文'}；译文不是等义证明，请人工核对。`));
+     for(const warning of language.warnings||[])c.langBody.append(U.node('p',warning,'hint'));
+     c.langBody.append(U.node('h5','转换前文本'),U.node('pre',language.original_text,'wrapped'));
+     c.langBody.append(U.node('h5','转换后的显示文本'),U.node('pre',language.final_text,'wrapped'));
+   }
+   if(language)c.meta.textContent+=' · '+(language.status==='complete'?'已转中文，需核对':'中文转换部分失败，保留原文');
    if(c.text.value!==(candidate?.text||''))c.text.value=candidate?.text||'';
    c.retry.disabled=task.live||task.stale||task.status==='committed'||committing;
    c.take.disabled=c.part.disabled=!candidate||task.status==='committed'||committing;
    const tries=task.attempts.filter(a=>a.candidate_index===slot.index),signature=JSON.stringify(tries.map(a=>[a.id,a.status]));
-   if(signature!==c.signature){c.signature=signature;c.log.replaceChildren();for(const a of tries){const d=U.node('details');d.append(U.node('summary',`第 ${a.attempt_no} 次 · ${labels[a.status]||a.status}${a.error?' · '+a.error:''}`));if(a.text)d.append(U.node('pre',a.text,'wrapped'));c.log.append(d);}}
+   if(signature!==c.signature){c.signature=signature;c.log.replaceChildren();for(const a of tries){const d=U.node('details');d.append(U.node('summary',`第 ${a.attempt_no} 次 · ${labels[a.status]||a.status}${a.error?' · '+a.error:''}`));if(a.text)d.append(U.node('pre',a.text,'wrapped'));if(a.language)d.append(U.node('pre',JSON.stringify(a.language,null,2),'wrapped'));c.log.append(d);}}
   }
   const rewrite=task.task_type==='rewrite';
   $("task-target-panel").hidden=!rewrite;$("check-after-label").hidden=!rewrite;$("task-target").textContent=task.rewrite_target?.selected_text||'';

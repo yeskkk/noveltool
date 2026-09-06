@@ -80,7 +80,7 @@ def test_empty_analysis_is_valid_and_repaired_requires_review(project_path):
 
 async def session_ready(path,text=SOURCE,settings=None):
     s=ProjectSession(ProjectStore.open(path))
-    await s.update_config(ProjectConfig(analysis_model='fake'),s.project.data.meta.data_version)
+    await s.update_config(ProjectConfig(analysis_protocol="strict", analysis_model='fake'),s.project.data.meta.data_version)
     await s.import_manuscript(text,0)
     await s.imports.create_plan(settings or PlanSettings(),1)
     return s
@@ -151,7 +151,7 @@ def test_busy_no_model_and_wrong_plan_do_not_start(project_path):
                 with pytest.raises(LLMError,match='正在运行'):await s.analysis.run_chunk(s.imports.last_plan.id,0,1)
             from noveltool.manuscript import ManuscriptError
             with pytest.raises(ManuscriptError):await s.analysis.run_chunk('bad',0,1)
-            await s.update_config(ProjectConfig(),s.project.data.meta.data_version)
+            await s.update_config(ProjectConfig(analysis_protocol="strict", ),s.project.data.meta.data_version)
             with pytest.raises(LLMError,match='名称'):await s.analysis.run_chunk(s.imports.last_plan.id,0,1)
             assert not await s.analysis.list_runs()
         finally:await s.close()

@@ -137,7 +137,7 @@ def test_job_stops_on_revision_config_or_network_change(project_path,change):
         async def handler(req):
             calls.append(req)
             if change=='text':await s.append_manuscript('更改',1)
-            elif change=='model':await s.update_config(ProjectConfig(analysis_model='another'),s.project.data.meta.data_version)
+            elif change=='model':await s.update_config(ProjectConfig(analysis_protocol="strict", analysis_model='another'),s.project.data.meta.data_version)
             else:raise httpx.ConnectError('offline')
             return auto_response(req)
         try:

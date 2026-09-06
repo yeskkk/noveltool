@@ -2,7 +2,7 @@ from importlib.resources import files
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from . import __version__
-from .ideas import IdeaRequest, ProposalDraft, ProposalAccept
+from .ideas import IdeaRequest, ProposalDraft, ProposalAccept, IdeaResume
 
 router = APIRouter()
 
@@ -29,3 +29,7 @@ async def save_draft(proposal_id: str, body: ProposalDraft, request: Request):
 @router.post('/api/ideas/{proposal_id}/accept')
 async def accept(proposal_id: str, body: ProposalAccept, request: Request):
     return await request.app.state.session.ideas.accept(proposal_id,body)
+
+@router.post('/api/ideas/{proposal_id}/resume')
+async def resume_proposal(proposal_id: str, body: IdeaResume, request: Request):
+    return await request.app.state.session.ideas.resume(proposal_id, body, transport=request.app.state.llm_transport)

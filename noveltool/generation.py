@@ -89,6 +89,8 @@ class GenerationService:
                 attempts=[dict(r) for r in self.session.store.connection.execute(
                     'SELECT * FROM generation_attempts WHERE task_id=? ORDER BY candidate_index,attempt_no',(tid,))]
                 for a in attempts:
+                    from .language import for_id,for_owner
+                    a['language']=for_id(self.session,a.get('language_id')) or for_owner(self.session,'generation',a['id'])
                     check_text(a['text'])
                     if a['status'] in SUCCESS:
                         if not a['text'].strip() or count_chars(a['text'])!=a['char_count']:
@@ -123,7 +125,7 @@ class GenerationService:
         row,config,context,request,attempts=self._bundle_locked(tid)
         slots=self._slots_locked(row,attempts)
         return deepcopy({**row,**self.drafts.overlay_locked(row),'model':config.writer_model,'temperature':config.writer_temperature,
-            'min_chars':context['min_chars'],'max_chars':context['max_chars'],
+            'min_chars':context['min_chars'],'max_chars':context['max_chars'],'auto_chinese':config.auto_chinese,
             'instruction':request.context.instruction,'context_fingerprint':context['fingerprint'],
             'context_warnings':context.get('warnings',[]),
             'slots':slots,'attempts':attempts,'usable_count':sum(bool(s['candidate']) for s in slots),
@@ -173,13 +175,13 @@ class GenerationService:
                 (status,error[:2000] if error else None,utc_now(),tid)))
             self._invalidate(tid)
 
-    async def _finish_attempt(self,tid,aid,status,text='',error=None,run_id=None):
+    async def _finish_attempt(self,tid,aid,status,text='',error=None,run_id=None,language_id=None):
         s=self.session
         async with s.lock:
             chars=count_chars(text) if status in SUCCESS else 0
             def apply(c):
-                c.execute('UPDATE generation_attempts SET status=?,text=?,char_count=?,error=?,llm_run_id=?,updated_at=? WHERE id=?',
-                    (status,text,chars,error[:2000] if error else None,run_id,utc_now(),aid))
+                c.execute('UPDATE generation_attempts SET status=?,text=?,char_count=?,error=?,llm_run_id=?,updated_at=?,language_id=? WHERE id=?',
+                    (status,text,chars,error[:2000] if error else None,run_id,utc_now(),language_id,aid))
                 c.execute('UPDATE generation_tasks SET updated_at=? WHERE id=?',(utc_now(),tid))
             s._commit_snapshot_locked(extra=apply);self._invalidate(tid)
 
@@ -189,6 +191,8 @@ class GenerationService:
             async with s.model_gate:
                 async with s.lock:
                     row,config,context,_,_=self._bundle_locked(tid)
+                    s.knowledge.refresh_locked()
+                    protected_names=[n for e in s.knowledge.graph['entities'] for n in [e['name'],*e.get('names',[]),*e.get('aliases',[])]]
                 async with LLMClient(config,on_run=s.record_llm_run,transport=transport) as client:
                     for index in indices:
                         if self.pause_requested:
@@ -208,9 +212,12 @@ class GenerationService:
                                 temperature=config.writer_temperature,max_tokens=context['output_token_reserve'],purpose='prose_candidate')
                             text=completion.text.strip();check_text(text)
                             if not text:raise ManuscriptError('模型返回了空白文本')
+                            from .language import ChineseRenderer
+                            converted=await ChineseRenderer(s,client,'generation',active_attempt).render(text,protected_names=protected_names)
+                            text=converted.text;check_text(text)
                             chars=count_chars(text)
                             status='complete' if context['min_chars']<=chars<=context['max_chars'] else 'length_mismatch'
-                            await self._finish_attempt(tid,active_attempt,status,text,run_id=completion.run_id)
+                            await self._finish_attempt(tid,active_attempt,status,text,run_id=completion.run_id,language_id=converted.id)
                         except LLMError as exc:
                             await self._finish_attempt(tid,active_attempt,'failed',exc.partial_text,error=str(exc),run_id=exc.run_id)
                             active_attempt=None

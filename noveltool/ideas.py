@@ -59,12 +59,18 @@ class IdeaRequest(Strict):
     max_tokens: int = Field(default=3072, ge=256, le=8192)
 
 
+class IdeaResume(Strict):
+    expected_version: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_proposal_version: int = Field(ge=0)
+
+
 class ProposalDraft(Strict):
     expected_proposal_version: int = Field(ge=0)
     draft: IdeaResult
 
 
 class ProposalAccept(ProposalDraft):
+    acknowledge_incomplete: bool = False
     expected_version: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -133,6 +139,15 @@ class IdeaService:
         d = {k: row[k] for k in ("id", "status", "version", "base_revision_no", "base_setting_version", "error", "created_at", "updated_at")}
         d["stale"] = row["status"] != "accepted" and self._stale_locked(row)
         d["requires_review"] = bool(row["requires_review"])
+        d["quality"] = strict_loads(row["quality_json"])
+        from .small_model import rows_for_owner
+        steps = (rows_for_owner(self.session, "idea", row["id"]) if detail else
+                 [dict(r) for r in self.session.store.connection.execute("SELECT step_key,status,task_label FROM model_steps WHERE owner_type='idea' AND owner_id=? ORDER BY rowid",(row['id'],))])
+        latest_steps=list({r['step_key']:r for r in steps}.values())
+        d["step_progress"] = {"total":len(latest_steps), "completed":sum(r['status']=='complete' for r in latest_steps),
+                              "current":next((r['task_label'] for r in reversed(steps) if r['status']=='running'), None)}
+        if detail:
+            d["steps"] = steps
         if detail:
             d["idea_text"] = row["idea_text"]
             for name in ("result", "draft"):
@@ -160,7 +175,17 @@ class IdeaService:
             return [self._view_locked(r, detail=False) for r in s.store.connection.execute(
                 "SELECT * FROM idea_proposals ORDER BY rowid DESC LIMIT 100")]
 
-    async def generate(self, body: IdeaRequest, *, transport=None):
+    async def resume(self, pid: str, body: IdeaResume, *, transport=None):
+        async with self.session.lock:
+            row=self._row_locked(pid)
+            if self.session.project.data.config.analysis_protocol != 'small':
+                raise ManuscriptError('逐项恢复只用于小问题模式；旧严格提案请重新生成')
+            quality=strict_loads(row['quality_json'])
+            request=IdeaRequest(idea_text=row['idea_text'],expected_version=body.expected_version,
+                max_tokens=quality.get('requested_output_tokens',self.session.project.data.config.small_output_tokens))
+        return await self.generate(request,transport=transport,_resume_id=pid,_resume_version=body.expected_proposal_version)
+
+    async def generate(self, body: IdeaRequest, *, transport=None, _resume_id=None, _resume_version=None):
         s = self.session
         if s.model_gate.locked() or s.jobs.busy or s.generation.busy or s.consistency.busy:
             raise LLMError("busy", "模型正在执行其他任务，请先等待或暂停它")
@@ -173,25 +198,47 @@ class IdeaService:
                 if not config.analysis_model:
                     raise LLMError("configuration", "请先填写分析模型名称")
                 messages = build_idea_messages(body.idea_text)
-                if request_token_estimate(messages)+body.max_tokens > int(config.context_window*config.context_safety_ratio):
+                if config.analysis_protocol == "strict" and request_token_estimate(messages)+body.max_tokens > int(config.context_window*config.context_safety_ratio):
                     raise LLMError("context_budget", "构思想法、Schema 与输出预留超过预算，请缩短想法或减少输出预留")
-                pid, base, now = uuid4().hex, s.manuscript.revision_no, utc_now()
-                s._commit_snapshot_locked(extra=lambda c: c.execute("""INSERT INTO idea_proposals
-                    (id,idea_text,base_revision_no,base_setting_version,config_json,status,created_at,updated_at)
-                    VALUES(?,?,?,?,?,'running',?,?)""", (pid, body.idea_text, base, body.expected_version,
-                    compact(config.model_dump()), now, now)))
+                pid, base, now = _resume_id or uuid4().hex, s.manuscript.revision_no, utc_now()
+                if _resume_id:
+                    row=self._row_locked(pid)
+                    if row['status'] in {'running','accepted'} or row['version'] != _resume_version or self._stale_locked(row):
+                        raise RevisionConflictError('提案已运行、确认或改变，请刷新后核对')
+                    if row['draft_json'] != row['result_json']:
+                        raise ManuscriptError('提案已有人工编辑，不会为恢复任务覆盖它。请保留草稿或重新生成新提案')
+                    from .analysis_jobs import model_signature
+                    from .domain import ProjectConfig
+                    if model_signature(ProjectConfig.model_validate_json(row['config_json'])) != model_signature(config):
+                        raise ManuscriptError('模型/小问题配置已改变，请新建提案，避免复用不同配置的结果')
+                    s._commit_snapshot_locked(extra=lambda c:c.execute("UPDATE idea_proposals SET status='running',error=NULL,version=version+1,updated_at=? WHERE id=?",(now,pid)))
+                else:
+                    s._commit_snapshot_locked(extra=lambda c: c.execute("""INSERT INTO idea_proposals
+                        (id,idea_text,base_revision_no,base_setting_version,config_json,status,created_at,updated_at,quality_json)
+                        VALUES(?,?,?,?,?,'running',?,?,?)""", (pid, body.idea_text, base, body.expected_version,
+                        compact(config.model_dump()), now, now, compact({'complete':False,'requested_output_tokens':body.max_tokens}))))
             try:
                 async with LLMClient(config, on_run=s.record_llm_run, transport=transport) as client:
-                    result = await StructuredLLM(client, on_validation=s.record_validation).call(
-                        messages=messages, schema=IdeaResult, model=config.analysis_model,
-                        temperature=config.analysis_temperature, max_tokens=body.max_tokens,
-                        purpose="idea_expansion", semantic_validator=validate_seed)
+                    if config.analysis_protocol == "small":
+                        from .small_workflows import expand_small
+                        async def progress(value, quality):
+                            async with s.lock:
+                                # Publish only a valid partial proposal, never canonical settings.
+                                s._commit_snapshot_locked(extra=lambda c:c.execute("""UPDATE idea_proposals SET
+                                    result_json=?,draft_json=?,quality_json=?,requires_review=1,updated_at=? WHERE id=? AND status='running'""",
+                                    (value.model_dump_json(),value.model_dump_json(),compact({**quality,'complete':False,'running':True,'requested_output_tokens':body.max_tokens}),utc_now(),pid)))
+                        result = await expand_small(s,client,body.idea_text,pid,body.max_tokens,progress)
+                    else:
+                        result = await StructuredLLM(client, on_validation=s.record_validation).call(
+                            messages=messages, schema=IdeaResult, model=config.analysis_model,
+                            temperature=config.analysis_temperature, max_tokens=body.max_tokens,
+                            purpose="idea_expansion", semantic_validator=validate_seed)
                 async with s.lock:
                     status = "stale" if self._stale_locked(self._row_locked(pid)) else "ready"
                     s._commit_snapshot_locked(extra=lambda c: c.execute("""UPDATE idea_proposals SET
-                        status=?,version=version+1,result_json=?,draft_json=?,llm_run_ids_json=?,repairs_json=?,requires_review=?,updated_at=?
+                        status=?,version=version+1,result_json=?,draft_json=?,llm_run_ids_json=?,repairs_json=?,requires_review=?,updated_at=?,quality_json=?
                         WHERE id=?""", (status, result.value.model_dump_json(), result.value.model_dump_json(),
-                        compact(result.run_ids), compact(result.repairs), int(result.requires_review), utc_now(), pid)))
+                        compact(result.run_ids), compact(result.repairs), int(result.requires_review), utc_now(), compact({**getattr(result,'quality',{}),'requested_output_tokens':body.max_tokens}),pid)))
             except asyncio.CancelledError:
                 await self._fail(pid, "interrupted", "请求取消；模型服务端可能仍在计算")
                 raise
@@ -210,7 +257,7 @@ class IdeaService:
 
     def _editable_locked(self, pid, version):
         row = self._row_locked(pid)
-        if row["status"] not in {"ready", "stale"}:
+        if row["status"] not in {"ready", "stale", "failed", "interrupted"} or row['draft_json'] is None:
             raise ManuscriptError("此构思不是可编辑的提案")
         if row["version"] != version:
             raise RevisionConflictError("构思草稿已在另一页面修改，请刷新后重试")
@@ -284,6 +331,8 @@ class IdeaService:
         s = self.session
         async with s.lock:
             row = self._editable_locked(pid, body.expected_proposal_version)
+            if not strict_loads(row['quality_json']).get('complete', True) and not body.acknowledge_incomplete:
+                raise ManuscriptError("提案含失败/不完整小步骤；请人工补齐并明确确认接受不完整提案，或重试缺失步骤")
             s.settings._check_locked(body.expected_version)
             if self._stale_locked(row) or s.manuscript.text:
                 raise RevisionConflictError("提案生成后正文或设定已改变，请核对当前设定并重新生成；草稿仍保留")

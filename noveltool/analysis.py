@@ -123,7 +123,15 @@ def build_input(plan: ChunkPlan, ordinal: int, doc: Manuscript,
         })},
     ]
     package = AnalysisInput(plan, ordinal, config, refs, blocks, frozenset(core), messages, pass_type, schema, schema_key)
-    if request_token_estimate(messages) + package.output_tokens > int(config.context_window * config.context_safety_ratio):
+    if config.analysis_protocol == "small":
+        # Actual prompts are built per source slice; don't send the giant schema.
+        from dataclasses import replace
+        package = replace(package, messages=[{"role":"system","content":
+            "小模型模式：按最多 %d 字符的源片段逐个提问，不发送 JSON Schema。来源由 Python 绑定，输出均需人工审核。" % config.small_source_chars},
+            {"role":"user","content":compact({"pass":pass_type,"source_chars":sum(len(blocks[r]) for r in core),
+                "max_entities_per_slice":config.small_max_entities,"per_request_output":config.small_output_tokens,
+                "core_blocks":{r:blocks[r] for r in blocks if r in core}})}])
+    if config.analysis_protocol == "strict" and request_token_estimate(messages) + package.output_tokens > int(config.context_window * config.context_safety_ratio):
         raise LLMError("context_budget", "含实际 Schema 的分析请求超出安全预算；请用较小块或较低输出预留重建计划")
     return package
 
@@ -188,18 +196,36 @@ class AnalysisService:
                 s._commit_snapshot_locked(extra=start)
             try:
                 async with LLMClient(package.config, on_run=s.record_llm_run, transport=transport) as client:
-                    result = await StructuredLLM(client, on_validation=s.record_validation).call(
-                        messages=package.messages, schema=package.schema, model=package.config.analysis_model,
-                        temperature=package.config.analysis_temperature, max_tokens=package.output_tokens,
-                        purpose=f"chunk_{package.pass_type}", semantic_validator=package.validate)
-                records = translate_observations(result.value, package)
+                    if package.config.analysis_protocol == "small":
+                        from .small_workflows import analyze_small
+                        result = await analyze_small(s, client, package, rid)
+                        records = result.records
+                    else:
+                        result = await StructuredLLM(client, on_validation=s.record_validation).call(
+                            messages=package.messages, schema=package.schema, model=package.config.analysis_model,
+                            temperature=package.config.analysis_temperature, max_tokens=package.output_tokens,
+                            purpose=f"chunk_{package.pass_type}", semantic_validator=package.validate)
+                        records = translate_observations(result.value, package)
+                quality = getattr(result, "quality", {})
                 async with s.lock:
                     stale = s.manuscript.revision_no != expected
+                    if package.config.analysis_protocol == "small" and not stale:
+                        # Retrying a failed micro step must not erase prior human
+                        # decisions about the identical payload AND identical full input.
+                        s.semantic.refresh_locked()
+                        decisions={}
+                        for old in sorted(s.semantic.eligible,key=lambda r:r['rowid'],reverse=True):
+                            if old['refs_json'] != compact(package.refs) or old['core_hash'] != package.plan.chunks[ordinal].core_hash:
+                                continue
+                            for o in s.store.connection.execute("SELECT * FROM observations WHERE run_id=? AND status IN ('accepted','rejected')",(old['id'],)):
+                                decisions.setdefault((o['kind'],o['payload_json'],o['evidence_json']),o['status'])
+                        for rec in records:
+                            rec['status']=decisions.get((rec['kind'],compact(rec['payload']),compact(rec['evidence'])),rec['status'])
                     def finish(conn):
                         conn.execute("""UPDATE analysis_runs SET status=?,llm_run_ids_json=?,repairs_json=?,
-                            requires_review=?,finished_at=? WHERE id=?""",
+                            requires_review=?,finished_at=?,quality_json=? WHERE id=?""",
                             ("stale" if stale else "done", compact(result.run_ids), compact(result.repairs),
-                             int(result.requires_review), utc_now(), rid))
+                             int(result.requires_review), utc_now(), compact(quality), rid))
                         for i, rec in enumerate(records):
                             conn.execute("INSERT INTO observations VALUES(?,?,?,?,?,?,?)",
                                 (rec["id"], rid, i, rec["kind"], compact(rec["payload"]),
@@ -260,6 +286,12 @@ class AnalysisService:
             result["stale"] = row["id"] not in {r['id'] for r in s.semantic.eligible} if row["status"] == "done" else row["base_revision_no"] != s.manuscript.revision_no or row["status"] == "stale"
             result["historical_revision"] = row["base_revision_no"] != s.manuscript.revision_no
             result["requires_review"] = bool(result["requires_review"])
+            result["quality"] = json.loads(result.pop("quality_json"))
+            from .small_model import rows_for_owner
+            result["steps"] = rows_for_owner(s, "analysis", rid)
+            if result["steps"] and not result["quality"]:
+                result["quality"] = {"protocol":"small-questions-v1", "complete":False,
+                    "notice":"工作流中断；已完成回答保留在小步骤，重试将复用成功检查点"}
             result["observations"] = [{"id": o["id"], "kind": o["kind"], "payload": json.loads(o["payload_json"]),
                     "evidence": json.loads(o["evidence_json"]), "status": o["status"]}
                 for o in s.store.connection.execute("SELECT * FROM observations WHERE run_id=? ORDER BY ordinal", (rid,))]

@@ -13,7 +13,7 @@ import json
 from typing import Any
 from pydantic import BaseModel, ValidationError
 
-from .llm import Completion, LLMError
+from .llm import Completion, LLMError, request_token_estimate
 from .llm_schemas import FactExtractionResult
 from .manuscript import check_text
 
@@ -46,7 +46,7 @@ class StructuredResult:
 
     @property
     def requires_review(self)->bool:
-        return any(r in {"local_repaired","model_repaired"} for r in self.repairs)
+        return any(r in {"local_repaired","model_repaired","output_regenerated"} for r in self.repairs)
 
 
 def _pairs(pairs):
@@ -217,12 +217,52 @@ class StructuredLLM:
                    semantic_validator:Callable[[Any],None]|None=None)->StructuredResult:
         attempts=[];repairs=[];original="";current_messages=messages
         for attempt in range(self.max_repairs+1):
-            response:Completion=await self.client.complete(messages=current_messages,model=model,
-                temperature=temperature if attempt==0 else 0.0,max_tokens=max_tokens,
-                purpose=purpose if attempt==0 else purpose+"_format_repair")
-            attempts.append(response.run_id)
-            raw=response.text
-            if attempt==0:original=raw
+            budget = max_tokens
+            cfg = getattr(self.client, "config", None)
+            retries = getattr(cfg, "output_retry_limit", 0)
+            for retry in range(retries + 1):
+                try:
+                    response: Completion = await self.client.complete(messages=current_messages, model=model,
+                        temperature=temperature if attempt == 0 else 0.0, max_tokens=budget,
+                        purpose=(purpose if attempt == 0 else purpose+"_format_repair")
+                                + ("_output_retry" if retry else ""))
+                    attempts.append(response.run_id)
+                    raw = response.text
+                    if not original:
+                        original = raw
+                    # stop is an API termination reason, NOT a JSON validity guarantee.
+                    try:
+                        extract_json_candidate(raw)
+                    except StructuredError as check:
+                        if check.code != "unbalanced":
+                            raise
+                        raise LLMError("truncated_json", "返回了未闭合 JSON（即使服务报告 stop）。",
+                                       partial_text=raw, run_id=response.run_id)
+                    break
+                except StructuredError:
+                    # Normal parser below decides whether a FORMAT repair is safe.
+                    break
+                except LLMError as trunc:
+                    if trunc.code not in {"truncated", "truncated_json"}:
+                        raise
+                    if trunc.run_id and trunc.run_id not in attempts:
+                        attempts.append(trunc.run_id)
+                    if not original:
+                        original = trunc.partial_text
+                    room = int(cfg.context_window * cfg.context_safety_ratio) - request_token_estimate(current_messages) if cfg else 0
+                    bigger = min(max(budget * 2, budget + 512), getattr(cfg, "structured_output_ceiling", budget), room)
+                    if retry >= retries or bigger <= budget:
+                        if trunc.code == "truncated":
+                            raise trunc
+                        raise StructuredError("incomplete_output",
+                            f"结构化输出未完整结束；已用输出预算 {budget} token。"
+                            "没有拼接或补造尾部。可改用小模型拆分协议，或核对日志中的结束原因、输出用量及服务端限制。",
+                            raw_output=trunc.partial_text, run_ids=tuple(attempts)) from trunc
+                    if self.on_validation and trunc.run_id:
+                        await self.on_validation(ValidationRecord(trunc.run_id, "failed", None,
+                            f"incomplete_output: {trunc}; retry_budget={bigger}"))
+                    budget = bigger
+                    repairs.append("output_regenerated")
             if response.finish_reason!="stop":
                 raise LLMError("truncated","未结束响应不可作为结构化输入",partial_text=raw,run_id=response.run_id)
             try:
