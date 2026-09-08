@@ -1,0 +1,14 @@
+{
+  "program": "1.0.0",
+  "archive": "noveltool-v1.0.0-source.zip",
+  "verification": "解压完整源码后独立运行回归测试与静态检查",
+  "pytest_command": "python -m pytest -q -W error",
+  "passed": 411,
+  "failed": 0,
+  "python_compileall": true,
+  "javascript_node_check": true,
+  "installed_resource_files_verified": 86,
+  "schema_version": 17,
+  "real_user_model_test": false,
+  "browser_mode": "python_http_bridge"
+}

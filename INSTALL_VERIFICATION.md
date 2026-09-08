@@ -1,49 +1,25 @@
-# v0.20.0 安装与升级实测
+# NovelTool v1.0.0 安装与兼容性验证
 
-本记录对应本次实际执行，不沿用旧版本验收。
+本记录来自本版实际执行，不沿用之前版本的验收结果。
 
-## 完整 wheel 安装
+## 安装
 
-从本次源码运行 `pip wheel --no-deps --no-build-isolation`，再使用 `pip install --no-deps --target` 安装到独立目录。离开源码目录后，显式核对导入路径确实来自安装目录。86 个应用 Python/SQL/HTML/JavaScript/CSS 资源与源码逐个 SHA256 比较一致，其中 SQL 脚本 17 个。
+从最终应用源代码运行 `python -m pip wheel --no-deps --no-build-isolation .`，再用 `pip install --no-deps --target` 安装到独立目录。离开源码目录后核对导入路径确实位于安装目录。86 个应用 Python、SQL、HTML、JavaScript、CSS 文件与源代码逐个 SHA256 比较一致，其中 SQL 17 个。
 
-在独立安装包上创建项目，经 FastAPI TestClient 设置分析模型并调用默认小问题诊断：4 次普通问答 + 1 次中文转换，结果附转换前文本、保持待审，正文始终为空；配置、模型、构思、生成、设定、时间线、分析、维护页面 HTTP 响应正常，草稿之外的项目保存成功。
+安装后的程序通过 FastAPI TestClient 检查“设定”和“时间线”页面：版本为 v1.0.0、批量按钮存在、脚本含新 API 调用；无待审项时调用接口返回 0，不误改数据。浏览器交互范围单列于 TEST_REPORT.md，不与这里的 HTTP 测试混淆。
 
-该 HTTP 测试使用确定性 MockTransport，不是用户本机模型，也不是浏览器原生网络测试。当前容器缺少 Playwright 所需的 Chromium 可执行文件，本版未执行新的浏览器点击验收；只进行了前端 JS 语法检查、页面资源测试和后端工作流验证。
+## v0.20.0 现有项目直接打开
 
-## v0.17.0 项目升级
+使用原始 v0.20.0 源码（不是本版模拟旧版本）创建 schema 17 数据库，保存自定义模型、A/B/n、中文转换配置，导入含 emoji、空白及英文专名的正文，再用确定性普通短答完成分析。提前接纳一个实体、拒绝一个事件、建立一个人工事实覆盖，剩余观察保留待审。
 
-使用原始 v0.17.0 源码创建项目（schema 14），保存自定义模型/字数配置、带 emoji/空白/英文专名/数字的正文，再做一次手工范围返修。新版打开生成升级前备份并升至 schema 17；旧配置保留、新模式默认为 small、中文转换默认开启。撤销旧返修逐字恢复初始正文，SQLite/外键/正文哈希检查通过。
+安装后的 v1.0.0 打开该文件：数据库仍是 schema 17，**不触发迁移，也不重分析**。配置、正文、正文 Revision、观察 ID/状态、人工档案/条目及设定版本指纹均与旧版保存时一致。
 
-升级前备份重新由 v0.17.0 打开，仍为旧 schema 和旧正文。回退只能用升级前备份；不要用旧程序直接打开升级后的数据库。
+点击等效的批量接纳接口后，剩余 6 条有效待审一次接纳。已拒绝事件、原来已接纳实体、人工覆盖、正文内容/Revision 均未改变，没有新增模型调用。重开后结果保留；SQLite integrity_check 和 foreign_key_check 通过。
 
-## 机器可读摘要
+因为结构没有变化，本次不会自动生成 schema 升级备份；升级前可在旧程序的“项目维护”自行下载完整备份。停止旧服务，再解压/安装新源码，用原项目路径启动，不要带 `--create`。
 
-```json
-{
-  "installation": {
-    "program": "0.20.0",
-    "schema": 17,
-    "installed_resource_hashes_match": 86,
-    "sql_files": 17,
-    "plain_answer_requests": 4,
-    "translation_requests": 1,
-    "pages_http_ok": true,
-    "manuscript_unchanged": true,
-    "real_browser_test": false,
-    "real_user_model_test": false
-  },
-  "upgrade": {
-    "from_program": "0.17.0",
-    "to_program": "0.20.0",
-    "from_schema": 14,
-    "to_schema": 17,
-    "backup_created": true,
-    "old_config_retained": true,
-    "old_rewrite_undo_exact": true,
-    "new_default_protocol": "small",
-    "auto_chinese": true,
-    "integrity_ok": true,
-    "backup_opens_in_old_program": true
-  }
-}
-```
+另实际用 v0.20.0 重新打开本版保存后的 schema 17 测试数据库，仍能读取接纳状态。本次兼容性不应推广成所有未来版本都可降级；有结构迁移的版本仍需升级前备份。
+
+## 可核对记录
+
+机器可读记录：`verification/install.json`。模型回答仅用于构造可重复测试数据；新批量接纳没有模型推理或格式转换。本版没有新增运行时依赖。

@@ -45,6 +45,10 @@ async def disable_entry(entry_id: str, body: Versioned, request: Request):
 async def review(body: ReviewWrite, request: Request):
     return await request.app.state.session.settings.review(body)
 
+@router.post("/api/settings/review/accept-all")
+async def accept_all_pending(body: Versioned, request: Request):
+    return await request.app.state.session.settings.accept_all_pending(body)
+
 @router.get("/api/settings/position")
 async def position(request: Request, line: int = Query(ge=1), edge: Literal["start", "end"] = "end"):
     s = request.app.state.session

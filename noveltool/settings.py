@@ -313,6 +313,39 @@ class SettingsService:
                                  {r["id"]: body.decision for r in rows}, apply)
         return await s.knowledge.view()
 
+    async def accept_all_pending(self, body: Versioned) -> dict:
+        """Accept the current source-valid pending set in one audited transaction.
+
+        The browser submits only the catalog version, not a paginated ID list.
+        The project lock and version guard fix exactly the set the user saw:
+        newer analysis requires a refresh rather than accepting unseen results.
+        Superseded/invalid rows never enter knowledge.records. Rejections and
+        manual overlays are untouched; a no-op creates no audit/version change.
+        """
+        s = self.session
+        async with s.lock:
+            self._check_locked(body.expected_version)
+            pending = [r for r in s.knowledge.records if r["status"] == "pending"]
+            count = len(pending)
+            if pending:
+                before = {r["id"]: "pending" for r in pending}
+                after = {oid: "accepted" for oid in before}
+
+                def apply(conn):
+                    # executemany uses one parameter per statement, avoiding a
+                    # giant IN (...) and the selected-review 512-ID API limit.
+                    cursor = conn.executemany(
+                        "UPDATE observations SET status='accepted' WHERE id=? AND status='pending'",
+                        ((oid,) for oid in before),
+                    )
+                    if cursor.rowcount != count:
+                        raise RevisionConflictError("观察已变化，批量接纳已全部回滚，请刷新后重试")
+
+                self._persist_locked("review_all_pending", uuid4().hex, before, after, apply)
+        result = await s.knowledge.view()
+        result["bulk_review"] = {"accepted_count": count}
+        return result
+
     def entry_views_locked(self):
         return [{**e.model_dump(), "at_cp": anchor_position(self.session.manuscript, e.anchor),
                  "anchor_stale": e.anchor is not None and anchor_position(self.session.manuscript, e.anchor) is None}

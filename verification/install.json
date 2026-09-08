@@ -1,0 +1,17 @@
+{
+  "program": "1.0.0",
+  "from_version": "0.20.0",
+  "schema_before": 17,
+  "schema_after": 17,
+  "migration_required": false,
+  "source_path": "/mnt/data/work/v1.0.0-installed/noveltool/__init__.py",
+  "resource_files_match": 86,
+  "sql_files": 17,
+  "old_text_config_observations_preserved": true,
+  "manual_overrides_preserved": true,
+  "bulk_accepted_count": 6,
+  "new_model_calls": 0,
+  "reopen_and_installed_http_ok": true,
+  "integrity_ok": true,
+  "schema17_reopens_in_v0_20_0": true
+}

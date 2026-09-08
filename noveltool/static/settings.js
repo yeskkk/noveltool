@@ -1,6 +1,6 @@
 "use strict";
 const ui=window.NovelUI,$=id=>document.getElementById(id);
-let data=null, selectedEntity=null, entryId=null, replaced=[], eventLimit=100, reviewLimit=80, dirtyForm=false;
+let data=null, selectedEntity=null, entryId=null, replaced=[], eventLimit=100, reviewLimit=80, dirtyForm=false, bulkReviewBusy=false;
 const titles={fact:"事实",state:"状态",event:"事件",relationship:"关系",thread:"线索",note:"笔记",narrative:"叙事分析",entity:"实体"};
 function entityName(id){return data.entities.find(e=>e.id===id)?.name||"（缺失实体）";}
 function showEvidence(parent,item){for(const e of item.evidence||[])parent.append(ui.node("blockquote",e.quote));}
@@ -99,7 +99,41 @@ function renderManual(){
   $("manual-items").replaceChildren();for(const e of data.entries){const row=ui.node("p",`${titles[e.kind]} · ${e.payload.field||e.payload.title||e.payload.kind||e.payload.summary||e.payload.label||""} · ${e.active?"有效":"已停用"}${e.anchor_stale?" · 定位失效":""} `);row.append(ui.button("编辑 / 重新定位",()=>editItem(e.kind,e)));$("manual-items").append(row);}
   if(!data.entries.length)$("manual-items").textContent="尚无人工条目。";
 }
+function renderBulkReview(){
+  const observations=data?.observations||[], pending=observations.filter(r=>r.status==="pending").length;
+  const accepted=observations.filter(r=>r.status==="accepted").length, rejected=observations.filter(r=>r.status==="rejected").length;
+  $("review-counts").textContent=`当前来源有效的观察：待审 ${pending} 条 · 已接受 ${accepted} 条 · 已拒绝 ${rejected} 条。批量接纳针对全部 ${pending} 条待审，不只是当前已显示的审核项。`;
+  $("accept-all-pending").textContent=bulkReviewBusy?"正在批量接纳…":`一次接纳全部待审（${pending} 条）`;
+  $("accept-all-pending").disabled=bulkReviewBusy||!pending;
+}
+$("accept-all-pending").onclick=async()=>{
+  if(bulkReviewBusy||!data)return;
+  const count=data.observations.filter(r=>r.status==="pending").length;
+  if(!count)return;
+  // A successful review re-renders entity fields. Do not discard an unsaved
+  // human edit merely to accept observations; refreshing remains explicit.
+  if(dirtyForm){ui.tell("有未保存的人工设定表单。请先保存，或点击“重新读取设定”放弃未保存修改，再批量接纳。",true);return;}
+  const version=data.version;
+  if(!confirm(`确认一次接纳全部 ${count} 条待审观察？\n\n包含尚未展开的观察，不受当前筛选限制；不改已拒绝结果、失效旧观察和人工设定。不会自动接纳以后新生成的观察。\n\n这表示你认可当前结果，不代表模型结论已被程序证明。`))return;
+  bulkReviewBusy=true;renderBulkReview();
+  // Freeze the visible forms while the response is in flight, so re-rendering
+  // cannot overwrite input made after the user confirmed the operation.
+  const controls=[...document.querySelectorAll("main input,main textarea,main select,main button")].map(el=>[el,el.disabled]);
+  for(const [el] of controls)el.disabled=true;
+  ui.tell(`正在保存 ${count} 条观察的接纳决定…`);
+  try{
+    const value=await ui.api("/api/settings/review/accept-all",{method:"POST",body:JSON.stringify({expected_version:version})});
+    for(const [el,disabled] of controls)el.disabled=disabled;
+    acceptData(value);
+    const accepted=value.bulk_review.accepted_count;
+    ui.tell(accepted?`已一次接纳 ${accepted} 条待审观察，并事务保存。已拒绝结果和人工设定未改；歧义或冲突仍需核对。`:"当前没有待审观察，无需修改。");
+  }catch(e){
+    for(const [el,disabled] of controls)el.disabled=disabled;
+    ui.tell(e.message+"；可重新读取设定核对当前状态，未自动重试。",true);
+  }finally{bulkReviewBusy=false;renderBulkReview();}
+};
 function renderReviews(){
+  renderBulkReview();
   const mode=$("review-filter").value, attention=new Set(data.review_queue.flatMap(q=>q.observation_ids||[]));
   const rows=data.observations.filter(r=>mode==="attention"?attention.has(r.id):r.status===mode);
   $("review-items").replaceChildren();

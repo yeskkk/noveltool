@@ -1,2 +1,2 @@
-__version__ = "0.20.0"
-MILESTONE = "M17"
+__version__ = "1.0.0"
+MILESTONE = "M21"

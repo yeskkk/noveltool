@@ -1,0 +1,16 @@
+{
+  "program": "1.0.0",
+  "browser_mode": "python_http_bridge",
+  "native_error": "Page.goto: net::ERR_BLOCKED_BY_ADMINISTRATOR at http://127.0.0.1:34853/settings",
+  "checks": [
+    "602 条待审、列表只展开 80 条，按钮仍显示全部数量",
+    "取消确认不会接纳，已拒绝筛选不限制全量按钮范围",
+    "未保存的人工表单会阻止批量刷新覆盖",
+    "事务失败显示错误、恢复按钮且没有部分接纳",
+    "一次接纳全部 602 条，保留 1 条拒绝和已有接纳，正文未变",
+    "旧时间线页面版本冲突被拒绝，刷新后数量为零"
+  ],
+  "page_errors": [],
+  "confirmation_count": 5,
+  "real_user_model": false
+}

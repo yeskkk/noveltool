@@ -1,4 +1,4 @@
-# 实际测试环境参考；安装依赖范围仍以 pyproject.toml 为准。
+# 本版实际测试环境参考；安装依赖范围仍以 pyproject.toml 为准。
 fastapi==0.128.2
 starlette==0.50.0
 uvicorn==0.48.0
